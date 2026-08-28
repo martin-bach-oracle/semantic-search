@@ -1,0 +1,9 @@
+vectorProvider all-minilm-l12-v2-augmented (
+    name: all_MiniLM_L12_v2_augmented
+    type: databaseOnnxModel
+    localEmbedding {
+        owner: DEMOUSER
+        modelName: DOC_MODEL
+    }
+)
+

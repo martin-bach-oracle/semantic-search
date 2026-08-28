@@ -1,0 +1,28 @@
+searchConfig blog-search (
+    name: Blog-Search
+    type: vector
+    source {
+        tableName: BLOGPOST_SEARCH_SOURCE
+    }
+    vectorAttributes {
+        provider: @all-minilm-l12-v2-augmented
+        columnName: CHUNK_EMBEDDING
+    }
+    columnMapping {
+        primaryKey1Column: POST_ID
+        titleColumn: TITLE
+        subtitleColumn: LINK
+        descriptionColumn: CHUNK_DATA
+    }
+    link {
+        type: redirectUrl
+        targetUrl: &LINK.
+    }
+    iconAndBadge {
+        iconSource: initials
+    }
+    performance {
+        maxRowsToReturn: 100
+    }
+)
+

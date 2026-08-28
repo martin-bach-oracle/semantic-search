@@ -1,0 +1,105 @@
+page 2 (
+    name: semantic-search
+    alias: SEMANTIC-SEARCH
+    title: semantic-search
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region search-results (
+        name: Search Results
+        type: search
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/search-results-container
+            templateOptions: #DEFAULT#
+        }
+        settings {
+            searchPageItem: P2_SEARCH
+            searchAsYouType: false
+        }
+        messages {
+            noQueryEnteredMessage: Please enter your search term.
+            noResultsFoundMessage: No results for your search term.
+        }
+
+        searchSource blog-search (
+            name: Blog-Search
+            searchConfig: @blog-search
+            layout {
+                sequence: 10
+            }
+        )
+
+    )
+
+    pageItem P2_SEARCH (
+        type: textField
+        label {
+            label: Search
+            alignment: left
+        }
+        settings {
+            subtype: search
+        }
+        layout {
+            sequence: 10
+            region: @breadcrumb
+            slot: searchFieldAndSmartFilters
+            alignment: left
+        }
+        appearance {
+            template: @/hidden
+            templateOptions: [
+                #DEFAULT#
+                t-Form-fieldContainer--stretchInputs
+                t-Form-fieldContainer--xlarge
+            ]
+            cssClasses: [
+                mxw800
+                t-Form-fieldContainer--noPadding
+            ]
+            icon: fa-search
+            valuePlaceholder: Search...
+        }
+        advanced {
+            warnOnUnsavedChanges: ignore
+        }
+    )
+
+)
+
