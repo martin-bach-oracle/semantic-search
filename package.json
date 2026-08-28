@@ -1,0 +1,20 @@
+{
+  "type": "module",
+  "version": "1.0.0",
+  "author": {
+    "email": "development@the-playground.de",
+    "name": "Martin Carsten Bach"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "html-to-text": "^10.0.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.11",
+    "@types/node": "^26.4.0",
+    "esbuild": "^0.28.2",
+    "mle-js-fetch": "^23.26.1",
+    "typescript": "^7.0.2"
+  }
+}
