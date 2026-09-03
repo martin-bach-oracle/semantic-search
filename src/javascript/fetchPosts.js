@@ -1,196 +1,373 @@
 import { convert } from 'html-to-text';
 import "mle-js-fetch";
 
+const POSTS_URL =
+  "https://public-api.wordpress.com/wp/v2/sites/martincarstenbach.com/posts" +
+  "?per_page=100" +
+  "&orderby=id&order=asc" +
+  "&_fields=id,slug,link,date_gmt,modified_gmt,content,title";
 
-/**
- * Logs a message to the log_table in the database.
- *
- * @param {string} code_unit - The name of the code unit or function generating the log.
- * @param {string} log_level - The severity level of the log (e.g., 'INFO', 'ERROR').
- * @param {number|string|null} post_id - The ID of the related post, or null if not applicable.
- * @param {string} log_message - The log message to record.
- * @param {any} [debug_info=null] - Optional debug information to include in the log.
- */
-function logMessage( code_unit, log_level, post_id, log_message, debug_info = null) {
-  
-  session.execute(
-    `insert into log_table (
-      code_unit,
-      log_level,
-      post_id,
-      log_message,
-      debug_info
-    ) values (
-      :code_unit,
-      :log_level,
-      :post_id,
-      :log_message,
-      :debug_info
-    )`,
-    {
-      code_unit: code_unit,
-      log_level: log_level || 'INFO',
-      post_id: post_id || null,
-      log_message: log_message || '',
-      debug_info: debug_info || null
-    }
-  );
+const dbmsAppInfo = plsffi.resolvePackage('DBMS_APPLICATION_INFO');
+const logger = plsffi.resolvePackage('LOGGER.LOGGER');
+const LOG_SCOPE_PREFIX = "semantic_search.fetch_posts";
+
+function logDebug(message, scope, extra = null) {
+  logger.log({
+    p_text: message,
+    p_scope: `${LOG_SCOPE_PREFIX}.${scope}`,
+    p_extra: extra,
+  });
 }
 
-/**
- * Fetches all posts from the WordPress.com API for martincarstenbach.com.
- *
- * @returns {Promise<Array<Object>>} Resolves to an array of WordPress post objects as returned by the API.
- */
-export async function fetchAllPosts() {
+function logInfo(message, scope, extra = null) {
+  logger.log_info({
+    p_text: message,
+    p_scope: `${LOG_SCOPE_PREFIX}.${scope}`,
+    p_extra: extra,
+  });
+}
 
-  const WORDPRESS_API_URL = "https://public-api.wordpress.com/wp/v2/sites/martincarstenbach.com/posts?per_page=10";
+function logWarning(message, scope, extra = null) {
+  logger.log_warn({
+    p_text: message,
+    p_scope: `${LOG_SCOPE_PREFIX}.${scope}`,
+    p_extra: extra,
+  });
+}
 
-  let posts = [];
-  let page = 1;
-  let hasMore = true;
+function logError(error, scope) {
+  const message = error instanceof Error ? error.message : String(error);
+  const details = error instanceof Error ? error.stack : null;
 
-  while (hasMore) {
+  logger.log_error({
+    p_text: message,
+    p_scope: `${LOG_SCOPE_PREFIX}.${scope}`,
+    p_extra: details,
+  });
+}
 
-    logMessage('fetchAllPosts', 'INFO', null, `Fetching all posts, currently working on page ${page}`);
+async function fetchPage(page) {
+  const response = await fetch(`${POSTS_URL}&page=${page}`);
 
-    const response = await fetch(`${WORDPRESS_API_URL}&page=${page}`);
-    if (!response.ok) {
-
-      logMessage('fetchAllPosts', 'ERROR', null, `Failed to fetch next batch of posts from page ${page}: ${response.status}`);
-      break;
-    }
-  
-    // fetch an array containing details of 10 posts. Don't discard any details here, this will
-    // later be done in transformPosts()
-    const data = await response.json();
-    
-    if (data.length === 0) {
-
-      logMessage('fetchAllPosts', 'INFO', null, `No more posts found on page ${page}`);
-      hasMore = false;
-    } else {
-
-      posts = posts.concat(data);
-      page++;
-    }
+  if (!response.ok) {
+    throw new Error(
+      `WordPress request for page ${page} failed with HTTP ${response.status}`,
+    );
   }
 
-  logMessage('fetchAllPosts', 'INFO', null, `Fetched ${posts.length} posts in total`);
+  return {
+    posts: await response.json(),
+    totalPages: Number(response.headers.get("X-WP-TotalPages")),
+  };
+}
+
+
+export async function fetchAllPosts() {
+
+  logInfo('starting to fetch all blog posts', 'fetchAllPosts', );
+
+  const first = await fetchPage(1);
+  const posts = [...first.posts];
+
+  for (let page = 2; page <= first.totalPages; page++) {
+    const result = await fetchPage(page);
+    posts.push(...result.posts);
+  }
+
+  logInfo(`done fetching all blog posts, ${posts.length} in total`, 'fetchAllPosts', );
 
   return posts;
 }
 
+function transformPosts(posts) {
 
-/**
- * Fetches a single post by ID from the WordPress.com API for martincarstenbach.com.
- *
- * @param {number|string} id - The ID of the WordPress post to fetch.
- * @returns {Promise<Array<Object>>} Resolves to an array containing a single WordPress post object.
- */
-export async function fetchSinglePost(id) {
+  return posts.map((post) => ({
+    id: post.id,
+    slug: post.slug,
+    link: post.link,
+    created: new Date(`${post.date_gmt}Z`),
+    modified: new Date(`${post.modified_gmt}Z`),
+    content: convert(post.content.rendered),
+    title: convert(post.title.rendered),
+  }));
 
-  const WORDPRESS_API_URL = `https://public-api.wordpress.com/wp/v2/sites/martincarstenbach.com/posts/${id}`;
-
-  logMessage('fetchPost', 'INFO', id, `trying to fetch post ${id}`);
-
-  const response = await fetch(`${WORDPRESS_API_URL}`);
-  if (!response.ok) {
-
-    logMessage('fetchPost', 'ERROR', id, `Error fetching post ${id}, status code is: ${response.status}`);
-    return;
-  }
-  
-  // fetch an object containing details of a single post. Don't discard any details here, this will
-  // later be done in transformPosts()
-  const data = await response.json();
-
-  // return an array with a single post so we can use the same transformation function
-  // based on array.map() as in the other fetch function
-  return [ data ]
 }
 
 /**
- * Transforms an array of WordPress post objects to a simplified format with plain text content and title.
+ * Refreshes WordPress posts and their vectorized chunks.
  *
- * @param {Array<Object>} posts - Array of WordPress post objects as returned by the API.
- * @returns {Array<Object>} Array of transformed post objects with id, slug, link, created, content, and title fields.
- */
-export function transformPosts(posts) {
-    return posts.map(post => ({
-        id: post.id,
-        slug: post.slug,
-        link: post.link,
-        created: new Date(post.date),
-        content: convert(post.content.rendered),
-        title: convert(post.title.rendered)
-    }));
-}
-
-/**
- * Fetches all WordPress posts, transforms them to plain text, and merges them into the Oracle blogposts table.
+ * The caller controls the transaction. This function deliberately does not
+ * commit or roll back.
  *
- * - Fetches all posts from the WordPress.com API.
- * - Transforms each post to a simplified format with plain text fields.
- * - Merges the posts into the main blogposts table using a JSON-based inline view.
- * - Logs progress and results to the log_table.
- *
- * @returns {Promise<void>} Resolves when the refresh and merge are complete.
+ * @returns {Promise<void>}
  */
 export async function refreshBlogposts() {
 
-  logMessage('refreshBlogposts', 'INFO', null, 'Starting to refresh blog posts');
+  const scope = "refresh_blogposts";
+  
+  dbmsAppInfo.set_module('semantic-search', 'refreshBlogposts');
+  logInfo("Starting blog-post refresh", scope);
 
-  // this should perhaps be improved so that only those posts that aren't yet
-  // stored in the table are fetched from wordpress
-  const allPosts = await fetchAllPosts();
-  const transformedPosts = transformPosts(allPosts);
+  try {
+    /*
+    * Fetch everything before performing DML. A fetch failure should throw from
+    * fetchAllPosts(), preventing a partial refresh.
+    */
+    const transformedPosts = transformPosts(await fetchAllPosts());
+    logDebug(
+        `Fetched and transformed ${transformedPosts.length} posts`,
+        scope,
+    );
 
-  logMessage('refreshBlogposts', 'INFO', null, `Transformed ${transformedPosts.length} posts for database insertion`);
+    if (transformedPosts.length === 0) {
+      logDebug(
+          `no more posts returned for processing`,
+          scope,
+      );
 
-  // merge the posts into the main table
-  const result = session.execute(
-    `merge into blogposts target
-      using (
-          select
-              jt.*
-          from
-              json_table(
-                  :posts,
-                  '$[*]'
-                  columns
-                      id,
-                      slug,
-                      link,
-                      created date,
-                      content clob,
-                      title
-              ) jt
-      ) source
-      on (target.id = source.id)
-      when not matched then
-          insert (
-              id,
-              slug,
-              link,
-              created,
-              content,
-              title
-          ) values (
-              source.id,
-              source.slug,
-              source.link,
-              source.created,
-              source.content,
-              source.title
-          )`,
-    {
+      return;
+    }
+
+    const postsBind = {
       posts: {
         val: transformedPosts,
-        type: oracledb.DB_TYPE_JSON
-      }
-    }
-  );
+        type: oracledb.DB_TYPE_JSON,
+      },
+    };
 
-  logMessage('refreshBlogposts', 'INFO', null, `Inserted or updated ${result.rowsAffected} posts in the database`);
+    /*
+    * Remove chunks belonging to posts whose searchable source data has changed.
+    *
+    * This must happen before the MERGE because afterwards the old and new
+    * blogpost values would be identical.
+    */
+
+    logDebug(
+        `about to invalidate chunks`,
+        scope,
+    );
+
+    const invalidatedChunks = session.execute(
+      `
+        delete from blogpost_chunks chunks
+        where exists (
+          select 1
+          from blogposts target
+          join json_table(
+            :posts,
+            '$[*]'
+            columns (
+              id      number        path '$.id',
+              slug    varchar2(255) path '$.slug',
+              link    varchar2(255) path '$.link',
+              created date          path '$.created',
+              modified date         path '$.modified',
+              content clob          path '$.content',
+              title   varchar2(255) path '$.title'
+            )
+          ) source
+            on source.id = target.id
+          where chunks.post_id = target.id
+            and (
+              decode(target.slug, source.slug, 0, 1) = 1
+              or decode(target.link, source.link, 0, 1) = 1
+              or decode(target.created, source.created, 0, 1) = 1
+              or decode(target.modified, source.modified, 0, 1) = 1
+              or decode(target.title, source.title, 0, 1) = 1
+              or (
+                target.content is null
+                and source.content is not null
+              )
+              or (
+                target.content is not null
+                and source.content is null
+              )
+              or (
+                target.content is not null
+                and source.content is not null
+                and dbms_lob.compare(target.content, source.content) != 0
+              )
+            )
+        )
+      `,
+      postsBind,
+    );
+
+    logDebug(
+        `about to merge posts`,
+        scope,
+    );
+
+    /*
+    * Insert new posts and update existing posts only when their values differ.
+    */
+    const mergedPosts = session.execute(
+      `
+        merge into blogposts target
+        using (
+          select
+            source.id,
+            source.slug,
+            source.link,
+            source.created,
+            source.modified,
+            source.content,
+            source.title
+          from json_table(
+            :posts,
+            '$[*]'
+            columns (
+              id      number        path '$.id',
+              slug    varchar2(255) path '$.slug',
+              link    varchar2(255) path '$.link',
+              created date          path '$.created',
+              modified date         path '$.modified',
+              content clob          path '$.content',
+              title   varchar2(255) path '$.title'
+            )
+          ) source
+        ) source
+        on (target.id = source.id)
+
+        when matched then
+          update set
+            target.slug = source.slug,
+            target.link = source.link,
+            target.created = source.created,
+            target.modified = source.modified,
+            target.content = source.content,
+            target.title = source.title
+          where
+            decode(target.slug, source.slug, 0, 1) = 1
+            or decode(target.link, source.link, 0, 1) = 1
+            or decode(target.created, source.created, 0, 1) = 1
+            or decode(target.modified, source.modified, 0, 1) = 1
+            or decode(target.title, source.title, 0, 1) = 1
+            or (
+              target.content is null
+              and source.content is not null
+            )
+            or (
+              target.content is not null
+              and source.content is null
+            )
+            or (
+              target.content is not null
+              and source.content is not null
+              and dbms_lob.compare(target.content, source.content) != 0
+            )
+
+        when not matched then
+          insert (
+            id,
+            slug,
+            link,
+            created,
+            modified,
+            content,
+            title
+          )
+          values (
+            source.id,
+            source.slug,
+            source.link,
+            source.created,
+            source.modified,
+            source.content,
+            source.title
+          )
+      `,
+      postsBind,
+    );
+
+    logDebug(
+        `about to start chunking data for new and updated posts`,
+        scope,
+    );
+
+    /*
+    * New posts have no chunks. Changed posts also have no chunks because their
+    * old chunks were deleted above.
+    *
+    * UTL_TO_CHUNKS:
+    *   - produces chunks containing at most 200 words
+    *   - includes a 20-word overlap
+    *   - prefers natural recursive split points
+    *
+    * UTL_TO_EMBEDDINGS vectorizes the complete array of chunks in one operation
+    * using the ONNX model already loaded into the database.
+    */
+    const generatedChunks = session.execute(
+      `
+        insert into blogpost_chunks (
+          post_id,
+          chunk_id,
+          chunk_data,
+          chunk_embedding
+        )
+        with posts_to_process as (
+          select /*+ materialize */
+            posts.id,
+            posts.content
+          from blogposts posts
+          where posts.content is not null
+            and not exists (
+              select 1
+              from blogpost_chunks chunks
+              where chunks.post_id = posts.id
+            )
+        )
+        select
+          posts.id,
+          embeddings.embed_id,
+          embeddings.embed_data,
+          to_vector(embeddings.embed_vector)
+        from posts_to_process posts,
+          dbms_vector_chain.utl_to_embeddings(
+            dbms_vector_chain.utl_to_chunks(
+              dbms_vector_chain.utl_to_text(posts.content),
+              json(
+                '{
+                  "by": "words",
+                  "max": "200",
+                  "overlap": "20",
+                  "split": "recursively",
+                  "language": "american",
+                  "normalize": "all"
+                }'
+              )
+            ),
+            json(
+              '{
+                "provider": "database",
+                "model": "doc_model"
+              }'
+            )
+          ) embedding_result,
+          json_table(
+            embedding_result.column_value,
+            '$[*]'
+            columns (
+              embed_id     number         path '$.embed_id',
+              embed_data   varchar2(4000) path '$.embed_data',
+              embed_vector clob           path '$.embed_vector'
+            )
+          ) embeddings
+      `,
+    );
+
+    logInfo(
+      `Refresh completed: ${mergedPosts.rowsAffected ?? 0} posts changed, ` +
+        `${invalidatedChunks.rowsAffected ?? 0} chunks invalidated, ` +
+        `${generatedChunks.rowsAffected ?? 0} chunks generated`,
+      scope,
+    );
+
+    dbmsAppInfo.set_module(null, null);
+  } catch (error) {
+    logError(error, scope);
+    throw error; // Never mask the original failure.
+  } finally {
+    dbmsAppInfo.set_module(null, null);
+  }
 }
