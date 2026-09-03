@@ -2,6 +2,7 @@ searchConfig blog-search (
     name: Blog-Search
     type: vector
     source {
+        tableOwner: DEMOUSER
         tableName: BLOGPOST_SEARCH_SOURCE
     }
     vectorAttributes {

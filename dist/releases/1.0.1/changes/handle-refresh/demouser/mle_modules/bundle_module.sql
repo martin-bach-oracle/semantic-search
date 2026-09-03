@@ -1,5 +1,8 @@
+-- liquibase formatted sql
+-- changeset DEMOUSER:1788461261321 stripComments:false  logicalFilePath:handle-refresh/demouser/mle_modules/bundle_module.sql
+-- sqlcl_snapshot src/database/demouser/mle_modules/bundle_module.sql:34440ab0835f2dcfe12dca76dcd21543c4b8e16a:223b8523d6e20f10a4247334c7e4b1be32828081:alter
 
-  CREATE OR REPLACE MLE MODULE "DEMOUSER"."BUNDLE_MODULE" 
+CREATE OR REPLACE MLE MODULE "DEMOUSER"."BUNDLE_MODULE" 
    LANGUAGE JAVASCRIPT AS 
 // node_modules/domelementtype/lib/esm/index.js
 var ElementType;
@@ -6328,5 +6331,3 @@ export {
 };
 /
 
-
--- sqlcl_snapshot {"hash":"223b8523d6e20f10a4247334c7e4b1be32828081","type":"MLE_MODULE","name":"BUNDLE_MODULE","schemaName":"DEMOUSER","sxml":""}

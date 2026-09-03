@@ -1,4 +1,4 @@
-app BLOGPOST-SEARCH (
+app BLOGPOST-SEARCH101 (
     name: blogpost-search
     logo {
         type: text
