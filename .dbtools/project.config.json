@@ -6,7 +6,7 @@
     "version" : "26.2.1.0"
   },
   "schemas" : [ "DEMOUSER" ],
-  "lastReleaseVersion" : "1.0.0",
+  "lastReleaseVersion" : "1.0.1",
   "apex" : {
     "apexlang" : false
   },
