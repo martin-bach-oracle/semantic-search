@@ -36,7 +36,47 @@ APP_USER_PASSWORD=<your application schema/owner password>
 Then start the database, install ORDS and APEX.
 
 ```sh
-docker compose up
+docker compose up -d
+```
+
+Install the [logger framework](https://github.com/OraOpenSource/Logger/tree/master) once the database is available
+
+```sh
+cd /tmp
+tag_name=$(basename $(curl -fs -o/dev/null -w %{redirect_url} https://github.com/OraOpenSource/Logger/releases/latest))
+curl -OL "https://github.com/OraOpenSource/Logger/raw/master/releases/logger_${tag_name}.zip"
+unzip logger_${tag_name}.zip -d logger && rm logger_${tag_name}.zip
+
+sql sys@localhost/freepdb1 as sysdba <<!
+
+create user logger identified by logger;
+alter user logger quota 1g on users;
+grant connect,create view, create job, create table, create sequence, create trigger, create procedure, create any context, create public synonym to logger;
+
+conn logger/logger@localhost/freepdb1
+@@logger/logger_install.sql
+
+create or replace public synonym logger for logger.logger;
+create or replace public synonym logger_logs for logger.logger_logs;
+create or replace public synonym logger_logs_apex_items for logger.logger_logs_apex_items;
+create or replace public synonym logger_prefs for logger.logger_prefs;
+create or replace public synonym logger_prefs_by_client_id for logger.logger_prefs_by_client_id;
+create or replace public synonym logger_logs_5_min for logger.logger_logs_5_min;
+create or replace public synonym logger_logs_60_min for logger.logger_logs_60_min;
+create or replace public synonym logger_logs_terse for logger.logger_logs_terse;
+
+grant execute on logger to public;
+grant select, delete on logger_logs to public;
+grant select on logger_logs_apex_items to public;
+grant select, update on logger_prefs to public;
+grant select on logger_prefs_by_client_id to public;
+grant select on logger_logs_5_min to public;
+grant select on logger_logs_60_min to public;
+grant select on logger_logs_terse to public;
+
+!
+
+cd -
 ```
 
 Next, once the database is up and running, install the NPM modules. They are used for the MCP server (optional)
@@ -47,67 +87,31 @@ npm install
 
 ### Deploy the application
 
+Start by creating the workspace for the APEX application by executing `dist/utils/apex.sql`. It creates the workspace and an admin user.
+
 Use SQLcl projects to deploy the application. Connect as `demouser` to `freepdb1` then run
 
 ```sql
 @dist/install.sql
 ```
 
-Note that the APEX application's workspace must use `demouser` as its parsing schema! You must create the workspace manually. Once imported, you must create a vector provider in workspace utilities.
+### Populate the Search
 
-### Populate the search
-
-Next, execute `deploy.sh` to download/copy the ONNX AI model into the database container. Create the doc model while connected as a DBA to `freepdb1`:
-
-With the doc model created, it's time to stage the initial load.
+Still connected as `demouser` execute this code block to populate the search tables.
 
 ```sql
 begin
-    blog_posts_package.refreshBlogposts;
-
-    INSERT INTO blogpost_chunks (
-        post_id, 
-        chunk_id,
-        chunk_data,
-        chunk_embedding
-    )
-    SELECT
-        p.id                       post_id,
-        et.embed_id                chunk_id,
-        et.embed_data              chunk_data,
-        to_vector(et.embed_vector) chunk_embedding
-    FROM
-        blogposts p,
-        dbms_vector_chain.utl_to_embeddings(
-            dbms_vector_chain.utl_to_chunks(
-                dbms_vector_chain.utl_to_text(p.content),
-                JSON(
-                        '{"normalize":"all"}'
-                    )
-            ),
-            JSON(
-                    '{"provider":"database", "model":"doc_model"}'
-                )
-        ) t,
-        JSON_TABLE ( t.column_value, '$[*]'
-                COLUMNS (
-                    embed_id NUMBER PATH '$.embed_id',
-                    embed_data VARCHAR2 ( 4000 ) PATH '$.embed_data',
-                    embed_vector CLOB PATH '$.embed_vector'
-                )
-            )
-        et
-    WHERE p.id not in (select post_id from blogpost_chunks);
+    demouser.blog_posts_package.refreshblogposts;
+    commit;
 end;
 /
-
-commit;
 ```
 
-This will take a while, especially during the initial load. The code has plenty of potential for improvement, especially for delta-loading. `refreshBlogposts` in the package refer to the JavaScript function `refreshBlogposts()` in `src/javascript/fetchPosts.js`. 
-See also `src/database/snippets.sql` for more snippets.
+This will take a while, especially during the initial load.
 
 ## MCP Server
+
+This is work in progress, the MCP server cannot be used at the moment.
 
 The MCP Server is implemented in Typescript. It relies on a REST API published in ORDS, accessible via `http://localhost:8080/ords/demouser/api/search/`. The code is very much not secure since there is no OAuth2 protection implemented yet. Due to a known issue the ORDS configuration isn't exported correctly, make sure the call to `ords.define_handler` contains `p_mle_env_name   => 'SEMANTIC_SEARCH_ENV',` or else the REST calls will fail.
 
@@ -115,6 +119,6 @@ The API calls `semanticSearch()`, defined in `ORDS_MODULE`, which in turn select
 
 ## Troubleshooting
 
-Check the log table for debug information, and correct accordingly.
+Check the logger log tables for debug information, and correct accordingly.
 
 For ORDS-related problems, check the ORDS server logs.
