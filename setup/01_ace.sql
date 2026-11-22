@@ -5,7 +5,7 @@ begin
         host => 'public-api.wordpress.com',
         ace  =>  xs$ace_type(
             privilege_list => xs$name_list('http'),
-            principal_name => 'demouser',
+            principal_name => 'DEMOUSER',
             principal_type => xs_acl.ptype_db
         )
     );

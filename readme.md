@@ -11,16 +11,60 @@ Due to initial time constraints there isn't much available in terms of error han
 
 ## Using the code
 
-Follow these steps.
+Most of you probably want to use the project on an Autonomous AI Database 26ai instance. This saves you from having to deal with any other infrustructure components like ORDS and APEX since they are provided out of the box.
+
+## Using the project with Autonomous AI Database Serverless
+
+Follow these steps to install the project in an [Always Free Autonomous AI Database](https://docs.oracle.com/en/cloud/paas/autonomous-database/serverless/adbsb/autonomous-always-free.html).
+
+### Create the DEMOUSER account
+
+Connect to the ADB-S instance as `ADMIN`, then create the user:
+
+```sql
+create user demouser identified by "asdasdsadasdasd your super secret password here asdsgfghrtewfvdckjnb"
+default tablespace users
+quota 1g on users;
+
+grant CREATE SEQUENCE to DEMOUSER;
+grant CREATE ASSERTION to DEMOUSER;
+grant CREATE DOMAIN to DEMOUSER;
+grant CREATE JOB to DEMOUSER;
+grant CREATE MINING MODEL to DEMOUSER;
+grant CREATE MLE to DEMOUSER;
+grant CREATE SESSION to DEMOUSER;
+grant DEBUG CONNECT SESSION to DEMOUSER;
+grant EXECUTE DYNAMIC MLE to DEMOUSER;
+grant FORCE TRANSACTION to DEMOUSER;
+grant CREATE CLUSTER to DEMOUSER;
+grant CREATE MATERIALIZED VIEW to DEMOUSER;
+grant CREATE OPERATOR to DEMOUSER;
+grant CREATE PROCEDURE to DEMOUSER;
+grant CREATE PROPERTY GRAPH to DEMOUSER;
+grant CREATE SEQUENCE to DEMOUSER;
+grant CREATE SYNONYM to DEMOUSER;
+grant CREATE TABLE to DEMOUSER;
+grant CREATE TRIGGER to DEMOUSER;
+grant CREATE TYPE to DEMOUSER;
+grant CREATE VIEW to DEMOUSER;
+```
+
+This will become the parsing schema for the APEX application.
+
+## Using the project on your local laptop
+
+If you prefer to run the project locally, you require podman or docker compose. Since APEX doesn't arrive pre-installed with Oracle AI Database Free, you need to install it yourself.
 
 ### Download APEX
 
-Download the latest APEX release to the project root
+Download the latest APEX release to the project root. It is excluded from source control via an entry in `.gitignore`.
 
+```sh
+curl -LO https://download.oracle.com/otn_software/apex/apex_26.2_en.zip
+unzip -q apex_26.2_en.zip && rm apex_26.2_en.zip
 ```
-curl -LO https://download.oracle.com/otn_software/apex/apex_26.1_en.zip
-unzip -q apex_26.1_en.zip && rm apex_26.1_en.zip
-```
+
+If you have access to them, install the latest patches (you get the latest APEX patches with Autonomous AI Database as part of the package).
 
 The compose file will bring up the database and once it's up, intall ORDS and APEX. Optionally apply the latest APEX patch.
 
@@ -39,7 +83,17 @@ Then start the database, install ORDS and APEX.
 docker compose up -d
 ```
 
-Install the [logger framework](https://github.com/OraOpenSource/Logger/tree/master) once the database is available
+## Common Steps
+
+Regardless whether you chose a local deployment or an ABD-S instance, complete the setup with these steps:
+
+### Create an APEX Workspace
+
+Create a new workspace using `demouser` as the parsing schema. Name it `demouser`. If you want to deviate from the standard set in this project, make sure to update `dist/env/default.properties`.
+
+### Install the Logger Framework
+
+The [logger framework](https://github.com/OraOpenSource/Logger/tree/master) allows us to use logging in Oracle without having to reinvent the wheel. Once the database is available, install it. This framework has been chosen deliberately since any JavaScript logging framework would have required polyfills for the database, and these are additional overhead.
 
 ```sh
 cd /tmp
@@ -47,13 +101,15 @@ tag_name=$(basename $(curl -fs -o/dev/null -w %{redirect_url} https://github.com
 curl -OL "https://github.com/OraOpenSource/Logger/raw/master/releases/logger_${tag_name}.zip"
 unzip logger_${tag_name}.zip -d logger && rm logger_${tag_name}.zip
 
+# use ADMIN for ADB-S, best combined with a saved connection
 sql sys@localhost/freepdb1 as sysdba <<!
 
-create user logger identified by logger;
+create user logger identified by "&savePassword";
 alter user logger quota 1g on users;
 grant connect,create view, create job, create table, create sequence, create trigger, create procedure, create any context, create public synonym to logger;
 
-conn logger/logger@localhost/freepdb1
+-- adjust for ADB-S!
+conn logger/"&savePassword"@localhost/freepdb1
 @@logger/logger_install.sql
 
 create or replace public synonym logger for logger.logger;
@@ -79,17 +135,9 @@ grant select on logger_logs_terse to public;
 cd -
 ```
 
-Next, once the database is up and running, install the NPM modules. They are used for the MCP server (optional)
-
-```sh
-npm install
-```
-
 ### Deploy the application
 
-Start by creating the workspace for the APEX application by executing `dist/utils/apex.sql`. It creates the workspace and an admin user.
-
-Use SQLcl projects to deploy the application. Connect as `demouser` to `freepdb1` then run
+Make sure the `DEMOUSER` workspace exists. If not, refer to the instructions above to create it. Now, use SQLcl projects to deploy the application. Connect to the designated account and install the software:
 
 ```sql
 @dist/install.sql

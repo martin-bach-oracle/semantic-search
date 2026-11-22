@@ -6,15 +6,14 @@
     "name": "Martin Carsten Bach"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "html-to-text": "^10.0.1",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.11",
-    "@types/node": "^26.4.0",
+    "@biomejs/biome": "^2.6.8",
+    "@types/node": "^26.6.6",
     "esbuild": "^0.28.2",
-    "mle-js-fetch": "^23.26.1",
     "typescript": "^7.0.2"
   }
 }

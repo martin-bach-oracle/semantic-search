@@ -1,6 +1,7 @@
 import { convert } from 'html-to-text';
 import "mle-js-fetch";
 
+// Request only the fields used by the refresh, in a stable order across pages.
 const POSTS_URL =
   "https://public-api.wordpress.com/wp/v2/sites/martincarstenbach.com/posts" +
   "?per_page=100" +
@@ -8,44 +9,45 @@ const POSTS_URL =
   "&_fields=id,slug,link,date_gmt,modified_gmt,content,title";
 
 const dbmsAppInfo = plsffi.resolvePackage('DBMS_APPLICATION_INFO');
-const logger = plsffi.resolvePackage('LOGGER.LOGGER');
 const LOG_SCOPE_PREFIX = "semantic_search.fetch_posts";
 
-function logDebug(message, scope, extra = null) {
-  logger.log({
-    p_text: message,
-    p_scope: `${LOG_SCOPE_PREFIX}.${scope}`,
-    p_extra: extra,
-  });
+/**
+ * Write a message through Logger's public synonym.
+ * @param {'DEBUG'|'INFO'|'WARN'|'ERROR'} level Logger level.
+ * @param {unknown} message Message or error to log.
+ * @param {string} scope Operation name appended to the prefix.
+ * @param {string|null} [extra=null] Optional details; errors supply their stack.
+ */
+function logMessage(level, message, scope, extra = null) {
+  const text = message instanceof Error ? message.message : String(message);
+  const details = message instanceof Error ? message.stack ?? null : extra;
+
+  // Calling through PL/SQL avoids the FFI's LOGGER.LOGGER name collision.
+  session.execute(
+    `begin
+       case :level
+         when 'DEBUG' then logger.log(p_text => :message, p_scope => :scope, p_extra => :extra);
+         when 'INFO' then logger.log_info(p_text => :message, p_scope => :scope, p_extra => :extra);
+         when 'WARN' then logger.log_warn(p_text => :message, p_scope => :scope, p_extra => :extra);
+         when 'ERROR' then logger.log_error(p_text => :message, p_scope => :scope, p_extra => :extra);
+         else raise_application_error(-20001, 'Unsupported Logger level');
+       end case;
+     end;`,
+    {
+      level,
+      message: text,
+      scope: `${LOG_SCOPE_PREFIX}.${scope}`,
+      extra: { val: details, type: oracledb.DB_TYPE_CLOB },
+    },
+  );
 }
 
-function logInfo(message, scope, extra = null) {
-  logger.log_info({
-    p_text: message,
-    p_scope: `${LOG_SCOPE_PREFIX}.${scope}`,
-    p_extra: extra,
-  });
-}
-
-function logWarning(message, scope, extra = null) {
-  logger.log_warn({
-    p_text: message,
-    p_scope: `${LOG_SCOPE_PREFIX}.${scope}`,
-    p_extra: extra,
-  });
-}
-
-function logError(error, scope) {
-  const message = error instanceof Error ? error.message : String(error);
-  const details = error instanceof Error ? error.stack : null;
-
-  logger.log_error({
-    p_text: message,
-    p_scope: `${LOG_SCOPE_PREFIX}.${scope}`,
-    p_extra: details,
-  });
-}
-
+/**
+ * Fetch one WordPress results page and its advertised page count.
+ * @param {number} page One-based page number.
+ * @returns {Promise<{posts: object[], totalPages: number}>} Page data and total pages.
+ * @throws {Error} If WordPress returns an unsuccessful HTTP response.
+ */
 async function fetchPage(page) {
   const response = await fetch(`${POSTS_URL}&page=${page}`);
 
@@ -55,6 +57,7 @@ async function fetchPage(page) {
     );
   }
 
+  // WordPress supplies the page count in a response header, not the JSON body.
   return {
     posts: await response.json(),
     totalPages: Number(response.headers.get("X-WP-TotalPages")),
@@ -62,10 +65,16 @@ async function fetchPage(page) {
 }
 
 
+/**
+ * Fetch all WordPress pages sequentially and combine their posts.
+ * @returns {Promise<object[]>} Posts in the order returned by the API.
+ * @throws {Error} If a page request fails.
+ */
 export async function fetchAllPosts() {
 
-  logInfo('starting to fetch all blog posts', 'fetchAllPosts', );
+  logMessage('INFO', 'starting to fetch all blog posts', 'fetchAllPosts');
 
+  // The first response determines how many subsequent pages to request.
   const first = await fetchPage(1);
   const posts = [...first.posts];
 
@@ -74,11 +83,16 @@ export async function fetchAllPosts() {
     posts.push(...result.posts);
   }
 
-  logInfo(`done fetching all blog posts, ${posts.length} in total`, 'fetchAllPosts', );
+  logMessage('INFO', `done fetching all blog posts, ${posts.length} in total`, 'fetchAllPosts');
 
   return posts;
 }
 
+/**
+ * Convert WordPress fields into the values consumed by the database refresh.
+ * @param {object[]} posts WordPress post objects with rendered title and content.
+ * @returns {object[]} Posts with UTC dates and plain-text title and content.
+ */
 function transformPosts(posts) {
 
   return posts.map((post) => ({
@@ -100,27 +114,40 @@ function transformPosts(posts) {
  * commit or roll back.
  *
  * @returns {Promise<void>}
+ * @throws {Error} If the DOC_MODEL ONNX embedding model is not present.
  */
 export async function refreshBlogposts() {
 
   const scope = "refresh_blogposts";
   
   dbmsAppInfo.set_module('semantic-search', 'refreshBlogposts');
-  logInfo("Starting blog-post refresh", scope);
+  logMessage('INFO', "Starting blog-post refresh", scope);
 
   try {
+    // Check before fetching or modifying posts so a missing model fails early.
+    const model = session.execute(`
+      select model_name
+      from user_mining_models
+      where model_name = 'DOC_MODEL'
+        and algorithm = 'ONNX'
+        and mining_function = 'EMBEDDING'
+    `);
+    if (model.rows.length === 0) {
+      throw new Error('DOC_MODEL ONNX embedding model is not present in the current schema');
+    }
+
     /*
     * Fetch everything before performing DML. A fetch failure should throw from
     * fetchAllPosts(), preventing a partial refresh.
     */
     const transformedPosts = transformPosts(await fetchAllPosts());
-    logDebug(
+    logMessage('DEBUG',
         `Fetched and transformed ${transformedPosts.length} posts`,
         scope,
     );
 
     if (transformedPosts.length === 0) {
-      logDebug(
+      logMessage('DEBUG',
           `no more posts returned for processing`,
           scope,
       );
@@ -128,6 +155,7 @@ export async function refreshBlogposts() {
       return;
     }
 
+    // Bind the entire batch as JSON for both set-based SQL statements.
     const postsBind = {
       posts: {
         val: transformedPosts,
@@ -142,7 +170,7 @@ export async function refreshBlogposts() {
     * blogpost values would be identical.
     */
 
-    logDebug(
+    logMessage('DEBUG',
         `about to invalidate chunks`,
         scope,
     );
@@ -193,7 +221,7 @@ export async function refreshBlogposts() {
       postsBind,
     );
 
-    logDebug(
+    logMessage('DEBUG',
         `about to merge posts`,
         scope,
     );
@@ -280,7 +308,7 @@ export async function refreshBlogposts() {
       postsBind,
     );
 
-    logDebug(
+    logMessage('DEBUG',
         `about to start chunking data for new and updated posts`,
         scope,
     );
@@ -356,7 +384,7 @@ export async function refreshBlogposts() {
       `,
     );
 
-    logInfo(
+    logMessage('INFO',
       `Refresh completed: ${mergedPosts.rowsAffected ?? 0} posts changed, ` +
         `${invalidatedChunks.rowsAffected ?? 0} chunks invalidated, ` +
         `${generatedChunks.rowsAffected ?? 0} chunks generated`,
@@ -365,9 +393,10 @@ export async function refreshBlogposts() {
 
     dbmsAppInfo.set_module(null, null);
   } catch (error) {
-    logError(error, scope);
+    logMessage('ERROR', error, scope);
     throw error; // Never mask the original failure.
   } finally {
+    // Clear the session module on both success and errors inside the try block.
     dbmsAppInfo.set_module(null, null);
   }
 }
