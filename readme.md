@@ -112,15 +112,6 @@ grant connect,create view, create job, create table, create sequence, create tri
 conn logger/"&savePassword"@localhost/freepdb1
 @@logger/logger_install.sql
 
-create or replace public synonym logger for logger.logger;
-create or replace public synonym logger_logs for logger.logger_logs;
-create or replace public synonym logger_logs_apex_items for logger.logger_logs_apex_items;
-create or replace public synonym logger_prefs for logger.logger_prefs;
-create or replace public synonym logger_prefs_by_client_id for logger.logger_prefs_by_client_id;
-create or replace public synonym logger_logs_5_min for logger.logger_logs_5_min;
-create or replace public synonym logger_logs_60_min for logger.logger_logs_60_min;
-create or replace public synonym logger_logs_terse for logger.logger_logs_terse;
-
 grant execute on logger to public;
 grant select, delete on logger_logs to public;
 grant select on logger_logs_apex_items to public;
