@@ -11,12 +11,12 @@ page 2 (
     }
     javaScript {
         executeWhenPageLoads:
-            ```javascript
+            ```javascript-browser
             // Capture clicks so this also covers results loaded by AJAX or pagination.
             document.getElementById("ss-search-results").addEventListener("click", function (event) {
                 const link = event.target.closest("a[href]");
                 if (!link || !this.contains(link)) return;
-
+            
                 const url = new URL(link.href, document.baseURI);
                 if ((url.protocol === "https:" || url.protocol === "http:") &&
                     url.origin !== window.location.origin) {
@@ -57,9 +57,6 @@ page 2 (
     region search-results (
         name: Search Results
         type: search
-        advanced {
-            htmlDomId: ss-search-results
-        }
         layout {
             sequence: 20
             slot: body
@@ -67,6 +64,9 @@ page 2 (
         appearance {
             template: @/search-results-container
             templateOptions: #DEFAULT#
+        }
+        advanced {
+            htmlDomId: ss-search-results
         }
         settings {
             searchPageItem: P2_SEARCH
