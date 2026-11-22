@@ -159,8 +159,6 @@ var/*
 
 **/afiedt.buf
 
-apex
-
 # target directory for esbuild and Typescript
 build
 
@@ -168,6 +166,6 @@ build
 .vscode/
 
 # additional files
-apex
+./apex
 model
 META-INF

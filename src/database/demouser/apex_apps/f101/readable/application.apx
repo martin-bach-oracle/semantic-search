@@ -1,4 +1,4 @@
-app BLOGPOST-SEARCH101 (
+app NEIL_TEST_APP101 (
     name: blogpost-search
     logo {
         type: text

@@ -1,9 +1,9 @@
 {
   "project" : "semantic-search",
   "sqlcl" : {
-    "connectionName" : "localhost_demouser_1521",
+    "connectionName" : "martincbach-demo-demouser",
     "autoConnect" : false,
-    "version" : "26.2.1.0"
+    "version" : "26.3.1.0"
   },
   "schemas" : [ "DEMOUSER" ],
   "lastReleaseVersion" : "1.0.1",
