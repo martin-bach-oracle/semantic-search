@@ -1,13 +1,30 @@
 page 2 (
-    name: semantic search
+    name: Semantic Search
     alias: SEMANTIC-SEARCH
-    title: semantic search
+    title: Semantic Search
     appearance {
         pageTemplate: @/standard
         templateOptions: #DEFAULT#
     }
     navigation {
         cursorFocus: doNotFocusCursor
+    }
+    javaScript {
+        executeWhenPageLoads:
+            ```javascript-browser
+            // Capture clicks so this also covers results loaded by AJAX or pagination.
+            document.getElementById("ss-search-results").addEventListener("click", function (event) {
+                const link = event.target.closest("a[href]");
+                if (!link || !this.contains(link)) return;
+            
+                const url = new URL(link.href, document.baseURI);
+                if ((url.protocol === "https:" || url.protocol === "http:") &&
+                    url.origin !== window.location.origin) {
+                    link.target = "_blank";
+                    link.relList.add("noopener", "noreferrer");
+                }
+            }, true);
+            ```
     }
     security {
         pageAccessProtection: argumentsMustHaveChecksum
@@ -47,6 +64,9 @@ page 2 (
         appearance {
             template: @/search-results-container
             templateOptions: #DEFAULT#
+        }
+        advanced {
+            htmlDomId: ss-search-results
         }
         settings {
             searchPageItem: P2_SEARCH

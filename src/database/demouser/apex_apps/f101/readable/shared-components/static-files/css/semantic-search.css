@@ -1,0 +1,106 @@
+/* Palette inspired by the DOAG slide: deep teal, coral, sea glass and ivory. */
+:root {
+  --ss-ink: #143441;
+  --ss-deep: #102c38;
+  --ss-coral: #f47d67;
+  --ss-sea: #9fc5bf;
+  --ss-paper: #f7f6f2;
+  --ss-muted: #526970;
+  --ut-palette-primary: #143441;
+  --ut-palette-primary-contrast: #ffffff;
+  --ut-palette-primary-shade: #102c38;
+  --ut-palette-primary-tint: #e0eeeb;
+  --ut-body-background-color: #f7f6f2;
+  --ut-header-background-color: #143441;
+  --ut-header-text-color: #ffffff;
+  --ut-nav-background-color: #102c38;
+  --ut-nav-text-color: #edf4f2;
+  --ut-link-text-color: #1c606b;
+  --ut-focus-outline-color: #b84834;
+}
+
+.t-Header-branding { background: var(--ss-ink); color: #fff; }
+.t-Header-logo-link { color: #fff; }
+.t-Body-nav, .t-TreeNav { background: var(--ss-deep); color: #edf4f2; }
+.t-TreeNav .a-TreeView-node--topLevel > .a-TreeView-content .a-TreeView-label {
+  color: #edf4f2;
+}
+.t-TreeNav .a-TreeView-content.is-selected,
+.t-TreeNav .a-TreeView-content.is-current { box-shadow: inset 3px 0 var(--ss-coral); }
+.t-Body-content, .t-Body-title { background: var(--ss-paper); }
+.t-BreadcrumbRegion { background: #e9efeb; color: var(--ss-ink); }
+.t-Button--hot {
+  --a-button-background-color: var(--ss-coral);
+  --a-button-text-color: var(--ss-deep);
+  --a-button-hover-background-color: #ff9984;
+  --a-button-hover-text-color: var(--ss-deep);
+}
+
+/* Keep the hero's background and layout independent of APEX-generated region IDs. */
+.ss-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(1.5rem, 3vw, 3.5rem);
+  padding: clamp(1.5rem, 4vw, 4rem);
+  border: 1px solid #345660;
+  border-radius: 1.25rem;
+  background-color: var(--ss-ink, #143441);
+  background-image: radial-gradient(ellipse at 95% 5%, #284c56, transparent 65%);
+  color: #f9faf7;
+  overflow: hidden;
+}
+.ss-eyebrow {
+  margin: 0 0 1rem;
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--ss-muted);
+}
+.ss-hero .ss-eyebrow { color: var(--ss-sea); }
+.ss-hero h1 {
+  margin: 0 0 1.5rem;
+  color: #f9faf7;
+  font-size: clamp(2.25rem, 3.8vw, 4rem);
+  line-height: 1.08;
+  letter-spacing: -.04em;
+  font-weight: 700;
+}
+.ss-lead { max-width: 34rem; margin: 0 0 1.75rem; font-size: 1.1rem; line-height: 1.75; color: #dce8e7; }
+.ss-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.5rem;
+  min-height: 48px;
+  padding: .85rem 1.25rem;
+  border-radius: .4rem;
+  background: var(--ss-coral);
+  color: var(--ss-deep);
+  font-weight: 700;
+  text-decoration: none;
+}
+.ss-cta:hover { background: #ff9984; color: var(--ss-deep); text-decoration: none; }
+.ss-cta:focus-visible { outline: 3px solid #f6d294; outline-offset: 5px; }
+.ss-hero-note { max-width: 28rem; margin: 1.25rem 0 0; color: #b8d1cf; font-size: .85rem; line-height: 1.6; }
+.ss-figure { min-width: 0; width: 100%; max-width: 600px; margin: 0 auto; }
+.ss-figure img { display: block; width: 100%; height: auto; }
+.ss-figure figcaption { margin-top: .75rem; color: #b8d1cf; font-size: .8rem; text-align: center; line-height: 1.6; }
+.ss-about { max-width: 1320px; margin: 3rem auto 1rem; color: var(--ss-ink); }
+.ss-about h2 { margin: 0 0 .75rem; font-size: clamp(1.6rem, 2.5vw, 2.25rem); line-height: 1.2; letter-spacing: -.025em; }
+.ss-about > p:not(.ss-eyebrow) { max-width: 52rem; color: var(--ss-muted); font-size: 1rem; line-height: 1.75; }
+.ss-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; margin: 1.75rem 0; }
+.ss-step { padding: 1.5rem; background: #fff; border: 1px solid #d8e2df; border-radius: .75rem; }
+.ss-step-number { color: #a94432; font-weight: 700; font-size: .8rem; letter-spacing: .08em; }
+.ss-step h3 { margin: .9rem 0 .65rem; font-size: 1.15rem; line-height: 1.3; color: var(--ss-ink); }
+.ss-step p { margin: 0; color: var(--ss-muted); line-height: 1.75; }
+.ss-search-tip { padding: 1rem 1.25rem; border-left: 3px solid #548b87; background: #e9efeb; border-radius: 0 .4rem .4rem 0; line-height: 1.75; }
+
+@media (max-width: 900px) {
+  .ss-hero { grid-template-columns: 1fr; }
+  .ss-steps { grid-template-columns: 1fr; }
+  .ss-hero h1 { font-size: clamp(2.2rem, 7vw, 3.5rem); }
+}
+@media (forced-colors: active) {
+  .ss-cta, .ss-step, .ss-hero { border: 1px solid ButtonText; }
+}

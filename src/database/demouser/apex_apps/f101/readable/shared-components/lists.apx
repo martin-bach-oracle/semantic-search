@@ -78,7 +78,7 @@ list navigation-menu (
     )
 
     entry semantic-search (
-        label: semantic search
+        label: Semantic Search
         icon {
             imageIconCssClasses: fa-search
         }
