@@ -9,7 +9,7 @@
     <n0:runApexScript objectName="install" objectType="SCRIPT" ownerName="DEMOUSER" sourceType="STRING"  relativeToChangelogFile="true" >
         <n0:source><![CDATA[
  declare 
- -- sqlcl version      = 26.2.1.0 
+ -- sqlcl version      = 26.3.1.0 
  -- override_schema    = ${apex.101.schema}
  -- override_alias     = ${apex.101.alias}
  -- override_workspace = ${apex.101.workspace}
@@ -17,7 +17,7 @@
  -- override_offset    = ${apex.101.offset}
 
  l_app_id varchar2(255) := q'[101]';  
- l_workspace varchar2(255) := q'[DEMO_WS]'; 
+ l_workspace varchar2(255) := q'[DEMOUSER]'; 
 
  l_override_workspace varchar2(255) := q'[${apex.101.workspace}]'; 
  l_override_schema varchar2(255) := q'[${apex.101.schema}]'; 
@@ -69,7 +69,7 @@
  end if;
 end;  
 /
--- sqlcl_checksum  69ac9b051a4eea30cda73c3fe7e61c265ede631f
+-- sqlcl_checksum  a8ba325c5232fd2480ba9f71813ca3db07a64d75
 @f101.sql
         ]]></n0:source>
     </n0:runApexScript>
