@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400" role="img" aria-labelledby="title description">
+  <title id="title">From blog posts to semantic search</title>
+  <desc id="description">JavaScript fetches blog posts, AI Vector Search splits text into chunks, an ONNX model creates embeddings inside Oracle AI Database, and APEX finds relevant passages by meaning.</desc>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="12" cy="12" r="1" fill="#9fc5bf" opacity=".16"/></pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="m1 1 8 4-8 4" fill="none" stroke="#9fc5bf" stroke-width="1.5"/></marker>
+  </defs>
+  <rect x="1" y="1" width="598" height="398" rx="22" fill="#102c38" stroke="#486771"/>
+  <rect x="2" y="2" width="596" height="396" rx="21" fill="url(#dots)"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="30" y="35" fill="#b8d1cf" font-size="11" letter-spacing="2">HOW IT WORKS</text>
+    <circle cx="558" cy="30" r="6" fill="#f47d67"/>
+    <g fill="none" stroke="#9fc5bf" stroke-width="2" marker-end="url(#arrow)">
+      <path d="M269 133h58"/>
+      <path d="M449 205v36"/>
+      <path d="M331 316h-58"/>
+    </g>
+    <g fill="#1b3e4b" stroke="#486771">
+      <rect x="28" y="59" width="241" height="146" rx="13"/>
+      <rect x="331" y="59" width="241" height="146" rx="13"/>
+      <rect x="331" y="246" width="241" height="126" rx="13"/>
+      <rect x="28" y="246" width="241" height="126" rx="13"/>
+    </g>
+    <g fill="#f47d67" font-size="11" font-weight="700" letter-spacing="1.5">
+      <text x="47" y="84">01 / COLLECT</text><text x="350" y="84">02 / CHUNK</text>
+      <text x="350" y="271">03 / EMBED</text><text x="47" y="271">04 / SEARCH</text>
+    </g>
+    <g fill="none" stroke="#9fc5bf" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="48" y="102" width="33" height="39" rx="3"/><path d="M56 112h17m-17 8h17m-17 8h11"/>
+      <rect x="351" y="105" width="33" height="9" rx="2"/><rect x="351" y="119" width="43" height="9" rx="2"/><rect x="351" y="133" width="27" height="9" rx="2"/>
+      <path d="m359 291 16 12 19-16 17 19m-36-3 17 17 19-14m-52-15 33 29"/>
+      <circle cx="61" cy="302" r="12"/><path d="m70 312 12 12"/>
+    </g>
+    <g fill="#f6d294"><circle cx="359" cy="291" r="4"/><circle cx="375" cy="303" r="4"/><circle cx="394" cy="287" r="4"/><circle cx="411" cy="306" r="4"/><circle cx="392" cy="320" r="4"/></g>
+    <g fill="#f9faf7" font-size="18" font-weight="700">
+      <text x="96" y="121">Blog posts</text><text x="406" y="121">Text chunks</text>
+      <text x="427" y="307">Vectors</text><text x="97" y="307">Relevant posts</text>
+    </g>
+    <g fill="#c9dcda" font-size="12">
+      <text x="47" y="166">Fetch from the WordPress API.</text><text x="47" y="184">Convert HTML to plain text.</text>
+      <text x="350" y="166">Split into smaller passages.</text><text x="350" y="184">Keep context with overlap.</text>
+      <text x="350" y="348">ONNX model inside Oracle Database</text>
+      <text x="47" y="348">Search by meaning in Oracle APEX</text>
+    </g>
+  </g>
+</svg>

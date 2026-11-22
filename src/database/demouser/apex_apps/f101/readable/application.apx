@@ -2,7 +2,10 @@ app NEIL_TEST_APP101 (
     name: blogpost-search
     logo {
         type: text
-        text: blogpost-search
+        text: Semantic Search
+    }
+    css {
+        fileUrls: #APP_FILES#css/semantic-search.css
     }
     navigation {
         homeUrl: {
