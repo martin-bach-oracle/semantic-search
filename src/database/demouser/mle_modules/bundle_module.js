@@ -6054,173 +6054,294 @@ function logMessage(code_unit, log_level, post_id, log_message, debug_info = nul
       return logger.log_warn(args);
     case "ERROR":
       return logger.log_error(args);
-    default:
-      throw new Error(`Unsupported log level: ${log_level}`);
+    default: {
+      const message = `Unsupported log level: ${log_level}`;
+      logger.log_error({ ...args, p_text: message });
+      throw new Error(message);
+    }
   }
 }
-async function fetchAllPosts() {
-  const WORDPRESS_API_URL = "https://public-api.wordpress.com/wp/v2/sites/martincarstenbach.com/posts?per_page=10";
-  let posts = [];
-  let page = 1;
-  let hasMore = true;
-  while (hasMore) {
-    logMessage("fetchAllPosts", "INFO", null, `Fetching all posts, currently working on page ${page}`);
-    const response = await fetch(`${WORDPRESS_API_URL}&page=${page}`);
-    if (!response.ok) {
-      logMessage("fetchAllPosts", "ERROR", null, `Failed to fetch next batch of posts from page ${page}: ${response.status}`);
-      break;
-    }
-    const data = await response.json();
-    if (data.length === 0) {
-      logMessage("fetchAllPosts", "INFO", null, `No more posts found on page ${page}`);
-      hasMore = false;
-    } else {
-      posts = posts.concat(data);
-      page++;
-    }
+function loggedError(codeUnit, message, postId = null, context = {}) {
+  const error2 = new Error(message);
+  logMessage(codeUnit, "ERROR", postId, message, { ...context, stack: error2.stack });
+  return error2;
+}
+var WORDPRESS_API_URL = "https://public-api.wordpress.com/wp/v2/sites/martincarstenbach.com/posts";
+var DATE_FORMAT = `'YYYY-MM-DD"T"HH24:MI:SS'`;
+function reportProgress(options, message, sofar, total) {
+  logMessage("maintenance", "INFO", null, message);
+  if (options.onProgress) options.onProgress({ message, sofar, total });
+}
+function utcTimestamp(value, postId, field) {
+  if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$/.test(value) || !Number.isFinite(Date.parse(`${value}Z`)) || (/* @__PURE__ */ new Date(`${value}Z`)).toISOString().slice(0, 19) !== value) {
+    throw loggedError("utcTimestamp", `Invalid WordPress UTC timestamp: ${value}`, postId, { field });
   }
-  logMessage("fetchAllPosts", "INFO", null, `Fetched ${posts.length} posts in total`);
+  return value;
+}
+function transformPosts(posts, includeContent = true) {
+  return posts.map((post) => {
+    if (!Number.isSafeInteger(post.id) || post.id <= 0 || typeof post.slug !== "string" || typeof post.title?.rendered !== "string" || typeof post.link !== "string" || !/^https:\/\//.test(post.link) || includeContent && typeof post.content?.rendered !== "string") {
+      throw loggedError("transformPosts", "Invalid WordPress post data", post.id, { includeContent });
+    }
+    return {
+      id: post.id,
+      slug: post.slug,
+      link: post.link,
+      created: utcTimestamp(post.date_gmt, post.id, "date_gmt"),
+      modified: utcTimestamp(post.modified_gmt, post.id, "modified_gmt"),
+      title: convert(post.title.rendered),
+      ...includeContent ? { content: convert(post.content.rendered) } : {}
+    };
+  });
+}
+async function fetchAllPosts(options = {}) {
+  const posts = [];
+  const seen = /* @__PURE__ */ new Set();
+  let expectedTotal;
+  let expectedPages;
+  const fields = options.metadataOnly ? "&_fields=id,slug,link,date_gmt,modified_gmt,title" : "";
+  for (let page = 1; ; page++) {
+    logMessage("fetchAllPosts", "INFO", null, "Fetching WordPress page", { page, metadataOnly: Boolean(options.metadataOnly) });
+    const response = await fetch(`${WORDPRESS_API_URL}?per_page=100&page=${page}&orderby=id&order=asc${fields}`);
+    if (!response.ok) throw loggedError("fetchAllPosts", `WordPress page ${page}: HTTP ${response.status}`, null, { page });
+    const totalHeader = response.headers.get("X-WP-Total");
+    const pagesHeader = response.headers.get("X-WP-TotalPages");
+    if (!/^\d+$/.test(totalHeader ?? "") || !/^\d+$/.test(pagesHeader ?? "")) {
+      throw loggedError("fetchAllPosts", "WordPress pagination headers are missing or invalid", null, { page, totalHeader, pagesHeader });
+    }
+    const total = Number(totalHeader);
+    const pages = Number(pagesHeader);
+    if (total === 0) throw loggedError("fetchAllPosts", "WordPress returned an unexpectedly empty collection; previous snapshot retained", null, { page });
+    if (!Number.isSafeInteger(total) || !Number.isSafeInteger(pages) || pages < 1 || pages > total) {
+      throw loggedError("fetchAllPosts", "Invalid WordPress pagination totals", null, { page, total, pages });
+    }
+    if (page === 1) {
+      expectedTotal = total;
+      expectedPages = pages;
+    }
+    if (total !== expectedTotal || pages !== expectedPages) {
+      throw loggedError(
+        "fetchAllPosts",
+        "WordPress collection changed during pagination; check again",
+        null,
+        { page, total, pages, expectedTotal, expectedPages }
+      );
+    }
+    const batch = await response.json();
+    if (!Array.isArray(batch) || batch.length === 0) throw loggedError("fetchAllPosts", "WordPress returned an incomplete collection", null, { page });
+    transformPosts(batch, !options.metadataOnly);
+    for (const post of batch) {
+      if (seen.has(post.id)) throw loggedError("fetchAllPosts", `Duplicate WordPress post ${post.id}`, post.id, { page });
+      seen.add(post.id);
+      posts.push(post);
+    }
+    reportProgress(options, `Checking WordPress page ${page} of ${pages}`, page, pages);
+    if (page === pages) break;
+  }
+  if (posts.length !== expectedTotal) throw loggedError(
+    "fetchAllPosts",
+    "WordPress post count does not match pagination total",
+    null,
+    { receivedPosts: posts.length, expectedTotal }
+  );
   return posts;
 }
 async function fetchSinglePost(id) {
-  const WORDPRESS_API_URL = `https://public-api.wordpress.com/wp/v2/sites/martincarstenbach.com/posts/${id}`;
-  logMessage("fetchPost", "INFO", id, `trying to fetch post ${id}`);
-  const response = await fetch(`${WORDPRESS_API_URL}`);
-  if (!response.ok) {
-    logMessage("fetchPost", "ERROR", id, `Error fetching post ${id}, status code is: ${response.status}`);
-    return;
+  const postId = Number(id);
+  if (!Number.isSafeInteger(postId) || postId <= 0) throw loggedError("fetchSinglePost", "Invalid WordPress post ID", id);
+  logMessage("fetchSinglePost", "INFO", postId, "Fetching WordPress post");
+  const response = await fetch(`${WORDPRESS_API_URL}/${postId}`);
+  if (!response.ok) throw loggedError("fetchSinglePost", `WordPress post ${postId}: HTTP ${response.status}`, postId);
+  const post = await response.json();
+  if (post.id !== postId) throw loggedError("fetchSinglePost", `WordPress returned the wrong post for ${postId}`, postId, { returnedPostId: post.id });
+  if (post.status && post.status !== "publish") throw loggedError("fetchSinglePost", `Post ${postId} is no longer published`, postId, { status: post.status });
+  transformPosts([post]);
+  return [post];
+}
+function jsonBind(payload) {
+  return { payload: { val: payload, type: oracledb.DB_TYPE_JSON } };
+}
+function mergeSource(posts) {
+  session.execute(`
+    merge into blogpost_source target
+    using (select jt.* from json_table(:payload, '$[*]' columns (
+      id number path '$.id' error on error,
+      title varchar2(255) path '$.title' error on error,
+      link varchar2(255) path '$.link' error on error,
+      created varchar2(19) path '$.created' error on error,
+      modified varchar2(19) path '$.modified' error on error
+    )) jt) source on (target.id = source.id)
+    when matched then update set target.title = source.title, target.link = source.link,
+      target.published_at = to_date(source.created, ${DATE_FORMAT}),
+      target.source_modified = to_date(source.modified, ${DATE_FORMAT}),
+      target.is_present = 'Y', target.checked_at = systimestamp
+    when not matched then insert (id, title, link, published_at, source_modified, is_present, checked_at)
+      values (source.id, source.title, source.link, to_date(source.created, ${DATE_FORMAT}),
+        to_date(source.modified, ${DATE_FORMAT}), 'Y', systimestamp)`, jsonBind(posts));
+}
+async function withMaintenanceLock(operation, work) {
+  logMessage(operation, "INFO", null, "Starting maintenance operation");
+  try {
+    session.execute("savepoint blog_maintenance");
+  } catch (error2) {
+    logMessage(operation, "ERROR", null, "Could not create maintenance savepoint", { message: String(error2.message || error2), stack: error2.stack });
+    throw error2;
   }
-  const data = await response.json();
-  return [data];
-}
-function transformPosts(posts) {
-  return posts.map((post) => ({
-    id: post.id,
-    slug: post.slug,
-    link: post.link,
-    created: new Date(post.date),
-    content: convert(post.content.rendered),
-    title: convert(post.title.rendered)
-  }));
-}
-async function refreshBlogposts() {
-  logMessage("refreshBlogposts", "INFO", null, "Starting to refresh blog posts");
-  const allPosts = await fetchAllPosts();
-  const transformedPosts = transformPosts(allPosts);
-  logMessage("refreshBlogposts", "INFO", null, `Transformed ${transformedPosts.length} posts for database insertion`);
-  session.execute("truncate table blogpost_chunks");
-  session.execute("truncate table blogposts");
-  const result = session.execute(
-    `merge into blogposts target
-      using (
-          select
-              jt.*
-          from
-              json_table(
-                  :posts,
-                  '$[*]'
-                  columns
-                      id,
-                      slug,
-                      link,
-                      created date,
-                      content clob,
-                      title
-              ) jt
-      ) source
-      on (target.id = source.id)
-      when not matched then
-          insert (
-              id,
-              slug,
-              link,
-              created,
-              content,
-              title
-          ) values (
-              source.id,
-              source.slug,
-              source.link,
-              source.created,
-              source.content,
-              source.title
-          )`,
-    {
-      posts: {
-        val: transformedPosts,
-        type: oracledb.DB_TYPE_JSON
-      }
+  try {
+    const result = session.execute("select id from blog_refresh_state where id = 1 for update nowait");
+    if (result.rows.length !== 1) throw loggedError(operation, "BLOG_REFRESH_STATE must contain the singleton row with ID 1");
+    logMessage(operation, "INFO", null, "Acquired maintenance lock");
+    const resultValue = await work();
+    logMessage(operation, "INFO", null, "Maintenance operation finished; transaction remains with caller");
+    return resultValue;
+  } catch (error2) {
+    logMessage(
+      operation,
+      "ERROR",
+      null,
+      "Maintenance operation failed; rolling back to savepoint",
+      { message: String(error2.message || error2), stack: error2.stack }
+    );
+    try {
+      session.execute("rollback to blog_maintenance");
+    } catch (rollbackError) {
+      logMessage(
+        operation,
+        "ERROR",
+        null,
+        "Maintenance rollback failed",
+        { message: String(rollbackError.message || rollbackError), stack: rollbackError.stack }
+      );
+      throw rollbackError;
     }
+    logMessage(operation, "INFO", null, "Rolled back maintenance operation");
+    if (error2.errorNum === 54 || /ORA-00054/.test(String(error2.message))) {
+      throw loggedError(operation, "A blog check or refresh is already running. Try again after it finishes.");
+    }
+    throw error2;
+  }
+}
+async function checkForUpdatesInternal(options) {
+  const posts = transformPosts(await fetchAllPosts({ ...options, metadataOnly: true }), false);
+  logMessage("checkForUpdates", "INFO", null, "Replacing validated metadata snapshot", { posts: posts.length });
+  session.execute("update blogpost_source set is_present = 'N'");
+  mergeSource(posts);
+  session.execute("update blog_refresh_state set last_checked_at = systimestamp where id = 1");
+  reportProgress(options, `Check complete: ${posts.length} published posts found`, posts.length, posts.length);
+  return posts.length;
+}
+function replaceIndexedPost(post) {
+  session.execute(`
+    merge into blogposts target
+    using (select jt.* from json_table(:payload, '$' columns (
+      id number path '$.id' error on error,
+      slug varchar2(255) path '$.slug' error on error,
+      link varchar2(255) path '$.link' error on error,
+      created varchar2(19) path '$.created' error on error,
+      modified varchar2(19) path '$.modified' error on error,
+      content clob path '$.content' error on error,
+      title varchar2(255) path '$.title' error on error
+    )) jt) source on (target.id = source.id)
+    when matched then update set target.slug = source.slug, target.link = source.link,
+      target.created = to_date(source.created, ${DATE_FORMAT}), target.content = source.content,
+      target.title = source.title, target.modified = to_date(source.modified, ${DATE_FORMAT})
+    when not matched then insert (id, slug, link, created, content, title, modified)
+      values (source.id, source.slug, source.link, to_date(source.created, ${DATE_FORMAT}),
+        source.content, source.title, to_date(source.modified, ${DATE_FORMAT}))`, jsonBind(post));
+  session.execute("delete from blogpost_chunks where post_id = :id", { id: post.id });
+  logMessage("replaceIndexedPost", "INFO", post.id, "Generating replacement chunks and embeddings");
+  const generated = session.execute(`
+    insert into blogpost_chunks (post_id, chunk_id, chunk_data, chunk_embedding)
+    select posts.id, embeddings.embed_id, embeddings.embed_data, to_vector(embeddings.embed_vector)
+    from (select id, content from blogposts where id = :id) posts,
+      dbms_vector_chain.utl_to_embeddings(
+        dbms_vector_chain.utl_to_chunks(dbms_vector_chain.utl_to_text(posts.content),
+          json('{
+            "limit":4000,"by":"words","max":"200","overlap":"20",
+            "split":"recursively","language":"american","normalize":"all"
+          }')),
+        json('{"provider":"database","model":"doc_model"}')
+      ) embedding_result,
+      json_table(embedding_result.column_value, '$[*]' columns (
+        embed_id number path '$.embed_id' error on error,
+        embed_data varchar2(4000) path '$.embed_data' error on error,
+        embed_vector clob path '$.embed_vector' error on error
+      )) embeddings`, { id: post.id });
+  const count = Number(generated.rowsAffected);
+  if (!count) throw loggedError("replaceIndexedPost", "No chunks generated; previous indexed version retained", post.id);
+  const invalid = session.execute(`select count(*) invalid_count from blogpost_chunks
+    where post_id = :id and chunk_embedding is null`, { id: post.id }).rows[0].INVALID_COUNT;
+  if (Number(invalid)) throw loggedError("replaceIndexedPost", "Generated chunks contain missing embeddings", post.id, { invalidChunks: Number(invalid) });
+  session.execute(`update blogposts set indexed_at = systimestamp, indexed_chunk_count = :count
+    where id = :id`, { id: post.id, count });
+  mergeSource([post]);
+  session.execute("update blogpost_source set last_error = null where id = :id", { id: post.id });
+  return count;
+}
+async function refreshSuggestedPostsInternal(options) {
+  const candidates = session.execute(`select id from blogpost_refresh_status
+    where refresh_suggested = 'Y' and is_present = 'Y' order by id`).rows;
+  const summary = { refreshed: 0, failed: 0, chunks: 0 };
+  reportProgress(options, `Refreshing ${candidates.length} suggested posts`, 0, candidates.length);
+  for (let index = 0; index < candidates.length; index++) {
+    const id = Number(candidates[index].ID);
+    logMessage("refreshSuggestedPosts", "INFO", id, "Starting post refresh");
+    session.execute("savepoint blog_post_refresh");
+    try {
+      const [post] = transformPosts(await fetchSinglePost(id));
+      const chunks = replaceIndexedPost(post);
+      summary.chunks += chunks;
+      summary.refreshed++;
+      logMessage("refreshSuggestedPosts", "INFO", id, "Post refreshed successfully", { chunks });
+    } catch (error2) {
+      const message = String(error2.message || error2).slice(0, 1e3);
+      logMessage(
+        "refreshSuggestedPosts",
+        "ERROR",
+        id,
+        "Post refresh failed; restoring previous indexed version",
+        { message, stack: error2.stack }
+      );
+      session.execute("rollback to blog_post_refresh");
+      logMessage("refreshSuggestedPosts", "INFO", id, "Rolled back post refresh");
+      session.execute("update blogpost_source set last_error = :message where id = :id", { id, message });
+      summary.failed++;
+    }
+    reportProgress(
+      options,
+      `Processed ${index + 1} of ${candidates.length}; ${summary.failed} failed`,
+      index + 1,
+      candidates.length
+    );
+  }
+  session.execute(`update blog_refresh_state set last_refreshed_at = systimestamp,
+    refreshed_posts = :refreshed, failed_posts = :failed, generated_chunks = :chunks
+    where id = 1`, summary);
+  reportProgress(
+    options,
+    `Refresh complete: ${summary.refreshed} refreshed, ${summary.failed} failed`,
+    candidates.length,
+    candidates.length
   );
-  const generatedChunks = session.execute(
-    `
-      insert /*+ parallel */ into blogpost_chunks (
-        post_id,
-        chunk_id,
-        chunk_data,
-        chunk_embedding
-      )
-      with posts_to_process as (
-        select
-          posts.id,
-          posts.content
-        from blogposts posts
-        where posts.content is not null
-          and not exists (
-            select 1
-            from blogpost_chunks chunks
-            where chunks.post_id = posts.id
-          )
-      )
-      select /*+ parallel */
-        posts.id,
-        embeddings.embed_id,
-        embeddings.embed_data,
-        to_vector(embeddings.embed_vector)
-      from posts_to_process posts,
-        dbms_vector_chain.utl_to_embeddings(
-          dbms_vector_chain.utl_to_chunks(
-            dbms_vector_chain.utl_to_text(posts.content),
-            json(
-              '{
-                "limit": 4000,
-                "by": "words",
-                "max": "200",
-                "overlap": "20",
-                "split": "recursively",
-                "language": "american",
-                "normalize": "all"
-              }'
-            )
-          ),
-          json(
-            '{
-              "provider": "database",
-              "model": "doc_model"
-            }'
-          )
-        ) embedding_result,
-        json_table(
-          embedding_result.column_value,
-          '$[*]'
-          columns (
-            embed_id     number         path '$.embed_id',
-            embed_data   varchar2(4000) path '$.embed_data',
-            embed_vector clob           path '$.embed_vector'
-          )
-        ) embeddings
-    `
-  );
-  logMessage(
-    "refreshBlogposts",
-    "INFO",
-    null,
-    `Inserted or updated ${generatedChunks.rowsAffected} chunks for ${result.rowsAffected} posts in the database`
-  );
+  return summary;
+}
+async function checkForUpdates(options = {}) {
+  return withMaintenanceLock("checkForUpdates", () => checkForUpdatesInternal(options));
+}
+async function refreshSuggestedPosts(options = {}) {
+  return withMaintenanceLock("refreshSuggestedPosts", () => refreshSuggestedPostsInternal(options));
+}
+async function refreshBlogposts(options = {}) {
+  return withMaintenanceLock("refreshBlogposts", async () => {
+    await checkForUpdatesInternal(options);
+    return refreshSuggestedPostsInternal(options);
+  });
 }
 export {
+  checkForUpdates,
   fetchAllPosts,
   fetchSinglePost,
   refreshBlogposts,
+  refreshSuggestedPosts,
   transformPosts
 };

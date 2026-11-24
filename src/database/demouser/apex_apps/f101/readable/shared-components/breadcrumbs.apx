@@ -1,6 +1,19 @@
 breadcrumb breadcrumb (
     name: Breadcrumb
 
+    entry blog-refresh (
+        name: Blog Refresh
+        pageNumber: 3
+        execution {
+            sequence: 30
+        }
+        link {
+            target: {
+                page: 3
+            }
+        }
+    )
+
     entry home (
         name: Home
         pageNumber: 1
