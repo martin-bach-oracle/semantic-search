@@ -36,18 +36,18 @@ prompt APPLICATION 101 - blogpost-search
 --   Exported By:     DEMOUSER
 --   Flashback:       0
 --   Export Type:     Application Export
---     Pages:                      4
---       Items:                    4
---       Processes:                4
---       Regions:                  4
---       Buttons:                  1
+--     Pages:                      5
+--       Items:                    5
+--       Processes:                7
+--       Regions:                  9
+--       Buttons:                  4
 --     Shared Components:
 --       Logic:
 --         Build Options:          1
 --       Navigation:
 --         Lists:                  2
 --         Breadcrumbs:            1
---           Entries:              2
+--           Entries:              3
 --       Security:
 --         Authentication:         1
 --         Authorization:          1
@@ -104,12 +104,13 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_string_01=>'APP_NAME'
 ,p_substitution_value_01=>'blogpost-search'
 ,p_file_prefix=>nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
-,p_files_version=>2461367104536
+,p_files_version=>2461369092909
 ,p_print_server_type=>'NATIVE'
 ,p_file_storage=>'DB'
 ,p_is_pwa=>'Y'
 ,p_pwa_is_installable=>'N'
 ,p_pwa_is_push_enabled=>'N'
+,p_mle_environment=>'SEMANTIC_SEARCH_ENV'
 ,p_theme_id=>42
 ,p_home_url=>'f?p=&APP_ID.:1:&SESSION.::&DEBUG.'
 ,p_login_url=>'f?p=&APP_ID.:LOGIN:&SESSION.::&DEBUG.'
@@ -301,6 +302,16 @@ wwv_flow_imp_shared.create_list(
  p_id=>wwv_flow_imp.id(39256711745800807)
 ,p_name=>'Navigation Menu'
 ,p_static_id=>'navigation-menu'
+);
+wwv_flow_imp_shared.create_list_item(
+ p_id=>wwv_flow_imp.id(10546163120246609)
+,p_list_item_display_sequence=>30
+,p_list_item_link_text=>'Blog Refresh'
+,p_static_id=>'blog-refresh'
+,p_list_item_link_target=>'f?p=&APP_ID.:3:&SESSION.::&DEBUG.'
+,p_list_item_icon=>'fa-refresh'
+,p_list_item_current_type=>'COLON_DELIMITED_PAGE_LIST'
+,p_list_item_current_for_pages=>'3'
 );
 wwv_flow_imp_shared.create_list_item(
  p_id=>wwv_flow_imp.id(39268030934800885)
@@ -918,6 +929,14 @@ wwv_flow_imp_shared.create_menu(
 ,p_static_id=>'breadcrumb'
 );
 wwv_flow_imp_shared.create_menu_option(
+ p_id=>wwv_flow_imp.id(10546023695246606)
+,p_option_sequence=>30
+,p_short_name=>'Blog Refresh'
+,p_static_id=>'blog-refresh'
+,p_link=>'f?p=&APP_ID.:3:&SESSION.::&DEBUG.'
+,p_page_id=>3
+);
+wwv_flow_imp_shared.create_menu_option(
  p_id=>wwv_flow_imp.id(39256445363800806)
 ,p_short_name=>'Home'
 ,p_static_id=>'home'
@@ -978,7 +997,7 @@ wwv_flow_imp_shared.create_theme(
 ,p_default_required_label=>1610598484065263269
 ,p_default_navbar_list_template=>2849019392706229583
 ,p_file_prefix=>nvl(wwv_flow_application_install.get_static_theme_file_prefix(42),'#APEX_FILES#themes/theme_42/26.1/')
-,p_files_version=>2461367104536
+,p_files_version=>2461369092909
 ,p_icon_library=>'FONTAPEX'
 ,p_javascript_file_urls=>wwv_flow_string.join(wwv_flow_t_varchar2(
 '#APEX_FILES#libraries/apex/#MIN_DIRECTORY#widget.stickyWidget#MIN#.js?v=#APEX_VERSION#',
@@ -1248,6 +1267,577 @@ wwv_flow_imp_page.create_page_item(
 );
 end;
 /
+prompt --application/pages/page_00003
+begin
+wwv_flow_imp_page.create_page(
+ p_id=>3
+,p_name=>'Blog Refresh'
+,p_alias=>'BLOG-REFRESH'
+,p_step_title=>'Blog Refresh'
+,p_first_item=>'AUTO_FIRST_ITEM'
+,p_autocomplete_on_off=>'OFF'
+,p_javascript_code_onload=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'// Poll job progress; refresh the data reports when a job reaches a final state.',
+'let activeJobSeen = false;',
+'let refreshing = false;',
+'apex.jQuery("#blog-refresh-jobs").on("apexafterrefresh", function () {',
+'    const active = this.querySelector(".blog-job-active");',
+'    if (activeJobSeen && !active) {',
+'        apex.region("blog-refresh-summary").refresh();',
+'        apex.region("blog-refresh-posts").refresh();',
+'    }',
+'    activeJobSeen = Boolean(active);',
+'    refreshing = false;',
+'});',
+'window.setInterval(function () {',
+'    if (document.visibilityState === "visible" && !refreshing) {',
+'        refreshing = true;',
+'        apex.region("blog-refresh-jobs").refresh();',
+'    }',
+'}, 5000);'))
+,p_step_template=>4073832297226169690
+,p_page_template_options=>'#DEFAULT#'
+,p_protection_level=>'C'
+);
+wwv_flow_imp_page.create_report_region(
+ p_id=>wwv_flow_imp.id(10547596652246629)
+,p_name=>'Background Jobs'
+,p_static_id=>'blog-refresh-jobs'
+,p_region_name=>'blog-refresh-jobs'
+,p_template=>4073835273271169698
+,p_display_sequence=>40
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
+,p_component_template_options=>'#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight'
+,p_source_type=>'NATIVE_SQL_REPORT'
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select execution_id, status_code, status_message,',
+'       case when totalwork > 0 then round(100 * sofar / totalwork) end progress_percent,',
+'       case when status_code in (''ENQUEUED'', ''SCHEDULED'', ''EXECUTING'')',
+'         then ''blog-job-active'' else ''blog-job-finished'' end active_class',
+'from apex_appl_page_bg_proc_status',
+'where application_id = :APP_ID',
+'  and page_id = 3',
+'  and process_name = ''Blog Maintenance''',
+'order by execution_id desc',
+'fetch first 5 rows only'))
+,p_ajax_enabled=>'Y'
+,p_lazy_loading=>false
+,p_query_row_template=>2540130677583398057
+,p_query_num_rows=>5
+,p_query_options=>'DERIVED_REPORT_COLUMNS'
+,p_query_no_data_found=>'No records to display.'
+,p_query_num_rows_type=>'ROW_RANGES_WITH_LINKS'
+,p_pagination_display_position=>'BOTTOM_RIGHT'
+,p_csv_output=>'N'
+,p_prn_output=>'N'
+,p_sort_null=>'L'
+,p_plug_query_strip_html=>'N'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10548029657246630)
+,p_query_column_id=>5
+,p_column_alias=>'ACTIVE_CLASS'
+,p_column_display_sequence=>50
+,p_hidden_column=>'Y'
+,p_derived_column=>'N'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10547623893246629)
+,p_query_column_id=>1
+,p_column_alias=>'EXECUTION_ID'
+,p_column_display_sequence=>10
+,p_column_heading=>'Execution'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10547994830246630)
+,p_query_column_id=>4
+,p_column_alias=>'PROGRESS_PERCENT'
+,p_column_display_sequence=>40
+,p_column_heading=>'Progress (%)'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10547773002246630)
+,p_query_column_id=>2
+,p_column_alias=>'STATUS_CODE'
+,p_column_display_sequence=>20
+,p_column_heading=>'Status'
+,p_column_html_expression=>'<span class="#ACTIVE_CLASS#">#STATUS_CODE#</span>'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10547842025246630)
+,p_query_column_id=>3
+,p_column_alias=>'STATUS_MESSAGE'
+,p_column_display_sequence=>30
+,p_column_heading=>'Progress / Outcome'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_region(
+ p_id=>wwv_flow_imp.id(10548186366246630)
+,p_name=>'Blog Posts and Chunks'
+,p_static_id=>'blog-refresh-posts'
+,p_region_name=>'blog-refresh-posts'
+,p_template=>4073835273271169698
+,p_display_sequence=>50
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
+,p_component_template_options=>'#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight'
+,p_source_type=>'NATIVE_SQL_REPORT'
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'select id, title, link, published_at, indexed_modified, source_modified,',
+'       chunk_count, indexed_chunk_count, status, refresh_suggested, last_error',
+'from blogpost_refresh_status',
+'order by case when refresh_suggested = ''Y'' then 0 else 1 end,',
+'         source_modified desc nulls last, id desc'))
+,p_ajax_enabled=>'Y'
+,p_lazy_loading=>false
+,p_query_row_template=>2540130677583398057
+,p_query_num_rows=>25
+,p_query_options=>'DERIVED_REPORT_COLUMNS'
+,p_query_no_data_found=>'No records to display.'
+,p_query_num_rows_type=>'ROW_RANGES_WITH_LINKS'
+,p_pagination_display_position=>'BOTTOM_RIGHT'
+,p_csv_output=>'N'
+,p_prn_output=>'N'
+,p_sort_null=>'L'
+,p_plug_query_strip_html=>'N'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10548817152246631)
+,p_query_column_id=>7
+,p_column_alias=>'CHUNK_COUNT'
+,p_column_display_sequence=>70
+,p_column_heading=>'Chunks'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10548241932246630)
+,p_query_column_id=>1
+,p_column_alias=>'ID'
+,p_column_display_sequence=>10
+,p_column_heading=>'Post ID'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10548905795246631)
+,p_query_column_id=>8
+,p_column_alias=>'INDEXED_CHUNK_COUNT'
+,p_column_display_sequence=>80
+,p_column_heading=>'Expected Chunks'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10548645274246631)
+,p_query_column_id=>5
+,p_column_alias=>'INDEXED_MODIFIED'
+,p_column_display_sequence=>50
+,p_column_heading=>'Indexed Version (UTC)'
+,p_column_format=>'YYYY-MM-DD HH24:MI:SS'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10549210598246632)
+,p_query_column_id=>11
+,p_column_alias=>'LAST_ERROR'
+,p_column_display_sequence=>110
+,p_column_heading=>'Last Refresh Error'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10548484823246631)
+,p_query_column_id=>3
+,p_column_alias=>'LINK'
+,p_column_display_sequence=>30
+,p_hidden_column=>'Y'
+,p_derived_column=>'N'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10548528388246631)
+,p_query_column_id=>4
+,p_column_alias=>'PUBLISHED_AT'
+,p_column_display_sequence=>40
+,p_column_heading=>'Published (UTC)'
+,p_column_format=>'YYYY-MM-DD HH24:MI:SS'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10549168785246631)
+,p_query_column_id=>10
+,p_column_alias=>'REFRESH_SUGGESTED'
+,p_column_display_sequence=>100
+,p_column_heading=>'Refresh Suggested'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10548752800246631)
+,p_query_column_id=>6
+,p_column_alias=>'SOURCE_MODIFIED'
+,p_column_display_sequence=>60
+,p_column_heading=>'Source Modified (UTC)'
+,p_column_format=>'YYYY-MM-DD HH24:MI:SS'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10549026769246631)
+,p_query_column_id=>9
+,p_column_alias=>'STATUS'
+,p_column_display_sequence=>90
+,p_column_heading=>'Status'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10548373837246630)
+,p_query_column_id=>2
+,p_column_alias=>'TITLE'
+,p_column_display_sequence=>20
+,p_column_heading=>'Title'
+,p_column_link=>'#LINK#'
+,p_column_linktext=>'#TITLE#'
+,p_column_link_attr=>'target="_blank" rel="noopener noreferrer"'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_region(
+ p_id=>wwv_flow_imp.id(10546817468246625)
+,p_name=>'Index Summary'
+,p_static_id=>'blog-refresh-summary'
+,p_region_name=>'blog-refresh-summary'
+,p_template=>4073835273271169698
+,p_display_sequence=>30
+,p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'
+,p_component_template_options=>'#DEFAULT#:t-Report--altRowsDefault:t-Report--rowHighlight'
+,p_source_type=>'NATIVE_SQL_REPORT'
+,p_query_type=>'SQL'
+,p_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'with totals as (',
+'    select count(*) known_posts,',
+'           nvl(sum(chunk_count), 0) total_chunks,',
+'           count(case when refresh_suggested = ''Y'' then 1 end) suggested_posts',
+'    from blogpost_refresh_status',
+')',
+'select t.known_posts,',
+'       t.total_chunks,',
+'       t.suggested_posts,',
+'       to_char(s.last_checked_at at time zone ''UTC'',',
+'               ''YYYY-MM-DD HH24:MI:SS'') last_checked_utc,',
+'       to_char(s.last_refreshed_at at time zone ''UTC'',',
+'               ''YYYY-MM-DD HH24:MI:SS'') last_refreshed_utc,',
+'       s.failed_posts last_failed_posts',
+'from totals t',
+'left join blog_refresh_state s on s.id = 1'))
+,p_ajax_enabled=>'Y'
+,p_lazy_loading=>false
+,p_query_row_template=>2540130677583398057
+,p_query_num_rows=>1
+,p_query_options=>'DERIVED_REPORT_COLUMNS'
+,p_query_no_data_found=>'No records to display.'
+,p_query_num_rows_type=>'ROW_RANGES_WITH_LINKS'
+,p_pagination_display_position=>'BOTTOM_RIGHT'
+,p_csv_output=>'N'
+,p_prn_output=>'N'
+,p_sort_null=>'L'
+,p_plug_query_strip_html=>'N'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10546953394246626)
+,p_query_column_id=>1
+,p_column_alias=>'KNOWN_POSTS'
+,p_column_display_sequence=>10
+,p_column_heading=>'Known Posts'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10547230174246629)
+,p_query_column_id=>4
+,p_column_alias=>'LAST_CHECKED_UTC'
+,p_column_display_sequence=>40
+,p_column_heading=>'Last Successful Check (UTC)'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10547422173246629)
+,p_query_column_id=>6
+,p_column_alias=>'LAST_FAILED_POSTS'
+,p_column_display_sequence=>60
+,p_column_heading=>'Failures in Last Refresh'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10547346719246629)
+,p_query_column_id=>5
+,p_column_alias=>'LAST_REFRESHED_UTC'
+,p_column_display_sequence=>50
+,p_column_heading=>'Last Refresh Completed (UTC)'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10547192826246629)
+,p_query_column_id=>3
+,p_column_alias=>'SUGGESTED_POSTS'
+,p_column_display_sequence=>30
+,p_column_heading=>'Suggested Refreshes'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_report_columns(
+ p_id=>wwv_flow_imp.id(10547045608246629)
+,p_query_column_id=>2
+,p_column_alias=>'TOTAL_CHUNKS'
+,p_column_display_sequence=>20
+,p_column_heading=>'Total Chunks'
+,p_heading_alignment=>'LEFT'
+,p_disable_sort_column=>'N'
+,p_derived_column=>'N'
+,p_include_in_export=>'Y'
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(10546635897246625)
+,p_plug_name=>'Breadcrumb'
+,p_static_id=>'breadcrumb'
+,p_region_template_options=>'#DEFAULT#:t-BreadcrumbRegion--useBreadcrumbTitle'
+,p_component_template_options=>'#DEFAULT#'
+,p_plug_template=>2532939663579242476
+,p_plug_display_sequence=>10
+,p_plug_display_point=>'REGION_POSITION_01'
+,p_plug_item_display_point=>'ABOVE'
+,p_location=>null
+,p_menu_id=>wwv_flow_imp.id(39256172853800804)
+,p_plug_source_type=>'NATIVE_BREADCRUMB'
+,p_menu_template_id=>4073839682315169711
+);
+wwv_flow_imp_page.create_page_plug(
+ p_id=>wwv_flow_imp.id(10546756028246625)
+,p_plug_name=>'Maintain Blog Posts'
+,p_static_id=>'maintenance'
+,p_region_template_options=>'#DEFAULT#'
+,p_plug_template=>4073835273271169698
+,p_plug_display_sequence=>20
+,p_plug_item_display_point=>'ABOVE'
+,p_location=>null
+,p_plug_source=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'<p>Check WordPress for new or changed posts, then refresh the suggested posts to update their search chunks.</p>',
+'<p>Unknown posts need one refresh to establish their indexing baseline. Posts missing from WordPress are retained for review.</p>',
+'<p>Background Jobs updates every five seconds. Use Reload reports to update all counts. Source dates are shown in UTC.</p>'))
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'expand_shortcuts', 'N',
+  'output_as', 'HTML')).to_clob
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(10549434094246633)
+,p_button_sequence=>10
+,p_button_plug_id=>wwv_flow_imp.id(10546756028246625)
+,p_button_name=>'CHECK_UPDATES'
+,p_static_id=>'check-updates'
+,p_show_as_disabled=>false
+,p_button_action=>'SUBMIT'
+,p_button_template_id=>4073839297780169708
+,p_button_image_alt=>'Check for updates'
+,p_button_position=>'NEXT'
+,p_button_execute_validations=>'N'
+,p_warn_on_unsaved_changes=>null
+,p_show_processing=>'Y'
+,p_grid_new_row=>'Y'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(10549557850246636)
+,p_button_sequence=>20
+,p_button_plug_id=>wwv_flow_imp.id(10546756028246625)
+,p_button_name=>'REFRESH_SUGGESTED'
+,p_static_id=>'refresh-suggested'
+,p_show_as_disabled=>false
+,p_button_action=>'SUBMIT'
+,p_button_template_id=>4073839297780169708
+,p_button_is_hot=>'Y'
+,p_button_image_alt=>'Refresh suggested posts'
+,p_button_position=>'NEXT'
+,p_button_execute_validations=>'N'
+,p_warn_on_unsaved_changes=>null
+,p_show_processing=>'Y'
+,p_grid_new_row=>'Y'
+);
+wwv_flow_imp_page.create_page_button(
+ p_id=>wwv_flow_imp.id(10549668439246636)
+,p_button_sequence=>30
+,p_button_plug_id=>wwv_flow_imp.id(10546756028246625)
+,p_button_name=>'RELOAD_REPORTS'
+,p_static_id=>'reload-reports'
+,p_show_as_disabled=>false
+,p_button_action=>'REDIRECT_PAGE'
+,p_button_template_id=>4073839297780169708
+,p_button_image_alt=>'Reload reports'
+,p_button_position=>'NEXT'
+,p_button_redirect_url=>'f?p=&APP_ID.:3:&SESSION.::&DEBUG.'
+,p_warn_on_unsaved_changes=>null
+,p_grid_new_row=>'Y'
+);
+wwv_flow_imp_page.create_page_branch(
+ p_id=>wwv_flow_imp.id(10555865701004672)
+,p_branch_name=>'Return to Blog Refresh'
+,p_branch_action=>'f?p=&APP_ID.:3:&SESSION.::&DEBUG.&success_msg=#SUCCESS_MSG#'
+,p_branch_point=>'AFTER_PROCESSING'
+,p_branch_type=>'REDIRECT_URL'
+,p_branch_sequence=>10
+);
+wwv_flow_imp_page.create_page_item(
+ p_id=>wwv_flow_imp.id(10549348533246632)
+,p_name=>'P3_ACTION'
+,p_item_sequence=>10
+,p_item_plug_id=>wwv_flow_imp.id(10546756028246625)
+,p_source_type=>'ALWAYS_NULL'
+,p_display_as=>'NATIVE_HIDDEN'
+,p_protection_level=>'I'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'value_protected', 'Y')).to_clob
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(10549844963246637)
+,p_process_sequence=>20
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_EXECUTION_CHAIN'
+,p_process_name=>'Blog Maintenance'
+,p_static_id=>'blog-maintenance'
+,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
+  'executions_limit', '1',
+  'run_in_background', 'Y',
+  'serialize', 'Y',
+  'submit_immediately', 'N',
+  'temporary_file_handling', 'IGNORE',
+  'when_already_running', 'ERROR')).to_clob
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_process_when=>'["CHECK_UPDATES", "REFRESH_SUGGESTED"].includes(apex.env.REQUEST)'
+,p_process_when_type=>'EXPRESSION'
+,p_process_when2=>'JAVASCRIPT'
+,p_process_success_message=>'Blog maintenance submitted. Follow its progress in Background Jobs.'
+,p_internal_uid=>10549844963246637
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(10549739879246637)
+,p_process_sequence=>10
+,p_process_point=>'AFTER_SUBMIT'
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Prepare Blog Maintenance'
+,p_static_id=>'prepare-maintenance'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'const action = apex.env.REQUEST;',
+'apex.env.P3_ACTION = ["CHECK_UPDATES", "REFRESH_SUGGESTED"].includes(action) ? action : null;'))
+,p_process_clob_language=>'JAVASCRIPT'
+,p_error_display_location=>'INLINE_IN_NOTIFICATION'
+,p_internal_uid=>10549739879246637
+);
+wwv_flow_imp_page.create_page_process(
+ p_id=>wwv_flow_imp.id(10549914906246638)
+,p_process_sequence=>10
+,p_parent_process_id=>wwv_flow_imp.id(10549844963246637)
+,p_process_type=>'NATIVE_PLSQL'
+,p_process_name=>'Check or Refresh Blog Posts'
+,p_static_id=>'run-maintenance'
+,p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'(async () => {',
+'    const background = plsffi.resolvePackage("APEX_BACKGROUND_PROCESS");',
+'    const logger = plsffi.resolvePackage("LOGGER.LOGGER");',
+'    const logScope = "semantic_search.apex.blog_refresh";',
+'    try {',
+'        logger.log_info({',
+'            p_text: "Starting background blog maintenance",',
+'            p_scope: logScope,',
+'            p_extra: "action: " + apex.env.P3_ACTION',
+'        });',
+'        const blogPosts = await import("blog_posts");',
+'        const options = {',
+'            onProgress({ message, sofar, total }) {',
+'                background.set_status({ p_message: message });',
+'                background.set_progress({ p_sofar: sofar, p_totalwork: Math.max(total, 1) });',
+'            }',
+'        };',
+'        if (apex.env.P3_ACTION === "CHECK_UPDATES") {',
+'            await blogPosts.checkForUpdates(options);',
+'        } else if (apex.env.P3_ACTION === "REFRESH_SUGGESTED") {',
+'            await blogPosts.refreshSuggestedPosts(options);',
+'        } else {',
+'            throw new Error("Unsupported blog maintenance operation");',
+'        }',
+'        logger.log_info({',
+'            p_text: "Committing background blog maintenance",',
+'            p_scope: logScope,',
+'            p_extra: "action: " + apex.env.P3_ACTION',
+'        });',
+'        apex.conn.execute("commit");',
+'    } catch (error) {',
+'        logger.log_error({',
+'            p_text: "Background blog maintenance failed: " + String(error.message || error).slice(0, 1000),',
+'            p_scope: logScope,',
+'            p_extra: "action: " + apex.env.P3_ACTION + "\n" + String(error.stack || "")',
+'        });',
+'        apex.conn.execute("rollback");',
+'        background.set_status({',
+'            p_message: "Maintenance failed: " + String(error.message || error).slice(0, 1000)',
+'        });',
+'        throw error;',
+'    }',
+'})();'))
+,p_process_clob_language=>'JAVASCRIPT'
+,p_internal_uid=>10549914906246638
+);
+end;
+/
 prompt --application/pages/page_09999
 begin
 wwv_flow_imp_page.create_page(
@@ -1479,4 +2069,4 @@ prompt  ...done
 
 
 
--- sqlcl_snapshot {"hash":"c0923d26267f1bf4962d8628228f6692452488e8","type":"APEX","name":"f101.sql","schemaName":"DEMOUSER","sxml":""}
+-- sqlcl_snapshot {"hash":"5d93df143cb6a4ac5d06d3f1aa094ed95e7f8833","type":"APEX","name":"f101.sql","schemaName":"DEMOUSER","sxml":""}
