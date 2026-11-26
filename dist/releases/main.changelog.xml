@@ -7,5 +7,6 @@
 <include file="ords/ords.changelog.xml" relativeToChangelogFile="true"/>
 <include file="1.0.1/release.changelog.xml" relativeToChangelogFile="true"/>
 <include file="1.0.2/release.changelog.xml" relativeToChangelogFile="true"/>
+<include file="1.0.3/release.changelog.xml" relativeToChangelogFile="true"/>
 <include file="apex/apex.changelog.xml" relativeToChangelogFile="true"/>
 </databaseChangeLog>

@@ -16,6 +16,21 @@
  * - BLOG_REFRESH_STATE holds check/refresh summaries and the singleton lock row.
  * - BLOGPOST_REFRESH_STATUS derives candidates from the source/index differences.
  *
+ * Flow through the APEX Blog Refresh page (Page 3):
+ * - The page imports this MLE module as `blog_posts` and runs the selected operation
+ *   as a serialized background process. Its progress callback updates the APEX job.
+ * - `Check for updates` fetches and validates the complete published-post metadata
+ *   snapshot before marking source rows present or absent and merging current metadata
+ *   into BLOGPOST_SOURCE. It does not change BLOGPOSTS or BLOGPOST_CHUNKS.
+ * - `Refresh suggested posts` reads source-present candidates from
+ *   BLOGPOST_REFRESH_STATUS, refetches each post, and replaces its BLOGPOSTS row and
+ *   BLOGPOST_CHUNKS text/vector set using DOC_MODEL. A failed post is rolled back to
+ *   its savepoint, its error is recorded, and the batch continues with other posts.
+ * - The APEX actions are separate: refresh uses the last checked source snapshot.
+ *   The page commits after a successful operation and rolls back a thrown failure;
+ *   its reports show job progress and the current source/index status. The combined
+ *   `refreshBlogposts` export remains available to callers that need check-then-refresh.
+ *
  * The exported maintenance operations never commit. APEX or the SQLcl caller owns
  * the transaction and must commit successful work or roll it back. A successful
  * function return therefore does not, by itself, mean that the changes are durable.
