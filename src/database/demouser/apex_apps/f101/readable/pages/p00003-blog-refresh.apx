@@ -1,0 +1,689 @@
+page 3 (
+    name: Blog Refresh
+    alias: BLOG-REFRESH
+    title: Blog Refresh
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    javaScript {
+        executeWhenPageLoads:
+            ```javascript-browser
+            // Poll job progress; refresh the data reports when a job reaches a final state.
+            let activeJobSeen = false;
+            let refreshing = false;
+            apex.jQuery("#blog-refresh-jobs").on("apexafterrefresh", function () {
+                const active = this.querySelector(".blog-job-active");
+                if (activeJobSeen && !active) {
+                    apex.region("blog-refresh-summary").refresh();
+                    apex.region("blog-refresh-posts").refresh();
+                }
+                activeJobSeen = Boolean(active);
+                refreshing = false;
+            });
+            window.setInterval(function () {
+                if (document.visibilityState === "visible" && !refreshing) {
+                    refreshing = true;
+                    apex.region("blog-refresh-jobs").refresh();
+                }
+            }, 5000);
+            ```
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region blog-refresh-jobs (
+        name: Background Jobs
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                select execution_id, status_code, status_message,
+                       case when totalwork > 0 then round(100 * sofar / totalwork) end progress_percent,
+                       case when status_code in ('ENQUEUED', 'SCHEDULED', 'EXECUTING')
+                         then 'blog-job-active' else 'blog-job-finished' end active_class
+                from apex_appl_page_bg_proc_status
+                where application_id = :APP_ID
+                  and page_id = 3
+                  and process_name = 'Blog Maintenance'
+                order by execution_id desc
+                fetch first 5 rows only
+                ```
+        }
+        layout {
+            sequence: 40
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        advanced {
+            htmlDomId: blog-refresh-jobs
+        }
+        reportLayout {
+            numberOfRows: 5
+        }
+        componentAppearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Report--altRowsDefault
+                t-Report--rowHighlight
+            ]
+        }
+        pagination {
+            type: rowRangesXToYOfZWithPagination
+        }
+        messages {
+            whenNoDataFound: No records to display.
+        }
+
+        column ACTIVE_CLASS (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            type: hidden
+            layout {
+                sequence: 50
+            }
+        )
+
+        column EXECUTION_ID (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Execution
+            }
+            layout {
+                sequence: 10
+            }
+        )
+
+        column PROGRESS_PERCENT (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Progress (%)
+            }
+            layout {
+                sequence: 40
+            }
+        )
+
+        column STATUS_CODE (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Status
+            }
+            layout {
+                sequence: 20
+            }
+            columnFormatting {
+                htmlExpression: <span class="#ACTIVE_CLASS#">#STATUS_CODE#</span>
+            }
+        )
+
+        column STATUS_MESSAGE (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: Progress / Outcome
+            }
+            layout {
+                sequence: 30
+            }
+        )
+
+    )
+
+    region blog-refresh-posts (
+        name: Blog Posts and Chunks
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                select id, title, link, published_at, indexed_modified, source_modified,
+                       chunk_count, indexed_chunk_count, status, refresh_suggested, last_error
+                from blogpost_refresh_status
+                order by case when refresh_suggested = 'Y' then 0 else 1 end,
+                         source_modified desc nulls last, id desc
+                ```
+        }
+        layout {
+            sequence: 50
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        advanced {
+            htmlDomId: blog-refresh-posts
+        }
+        reportLayout {
+            numberOfRows: 25
+        }
+        componentAppearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Report--altRowsDefault
+                t-Report--rowHighlight
+            ]
+        }
+        pagination {
+            type: rowRangesXToYOfZWithPagination
+        }
+        messages {
+            whenNoDataFound: No records to display.
+        }
+
+        column CHUNK_COUNT (
+            reportColumnQueryId: 7
+            derivedColumn: N
+            heading {
+                heading: Chunks
+            }
+            layout {
+                sequence: 70
+            }
+        )
+
+        column ID (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Post ID
+            }
+            layout {
+                sequence: 10
+            }
+        )
+
+        column INDEXED_CHUNK_COUNT (
+            reportColumnQueryId: 8
+            derivedColumn: N
+            heading {
+                heading: Expected Chunks
+            }
+            layout {
+                sequence: 80
+            }
+        )
+
+        column INDEXED_MODIFIED (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            heading {
+                heading: Indexed Version (UTC)
+            }
+            layout {
+                sequence: 50
+            }
+            appearance {
+                formatMask: YYYY-MM-DD HH24:MI:SS
+            }
+        )
+
+        column LAST_ERROR (
+            reportColumnQueryId: 11
+            derivedColumn: N
+            heading {
+                heading: Last Refresh Error
+            }
+            layout {
+                sequence: 110
+            }
+        )
+
+        column LINK (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            type: hidden
+            layout {
+                sequence: 30
+            }
+        )
+
+        column PUBLISHED_AT (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Published (UTC)
+            }
+            layout {
+                sequence: 40
+            }
+            appearance {
+                formatMask: YYYY-MM-DD HH24:MI:SS
+            }
+        )
+
+        column REFRESH_SUGGESTED (
+            reportColumnQueryId: 10
+            derivedColumn: N
+            heading {
+                heading: Refresh Suggested
+            }
+            layout {
+                sequence: 100
+            }
+        )
+
+        column SOURCE_MODIFIED (
+            reportColumnQueryId: 6
+            derivedColumn: N
+            heading {
+                heading: Source Modified (UTC)
+            }
+            layout {
+                sequence: 60
+            }
+            appearance {
+                formatMask: YYYY-MM-DD HH24:MI:SS
+            }
+        )
+
+        column STATUS (
+            reportColumnQueryId: 9
+            derivedColumn: N
+            heading {
+                heading: Status
+            }
+            layout {
+                sequence: 90
+            }
+        )
+
+        column TITLE (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            type: link
+            heading {
+                heading: Title
+            }
+            layout {
+                sequence: 20
+            }
+            link {
+                target: {
+                    type: url
+                    url: #LINK#
+                }
+                linkText: #TITLE#
+                linkAttributes: target="_blank" rel="noopener noreferrer"
+            }
+        )
+
+    )
+
+    region blog-refresh-summary (
+        name: Index Summary
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                with totals as (
+                    select count(*) known_posts,
+                           nvl(sum(chunk_count), 0) total_chunks,
+                           count(case when refresh_suggested = 'Y' then 1 end) suggested_posts
+                    from blogpost_refresh_status
+                )
+                select t.known_posts,
+                       t.total_chunks,
+                       t.suggested_posts,
+                       to_char(s.last_checked_at at time zone 'UTC',
+                               'YYYY-MM-DD HH24:MI:SS') last_checked_utc,
+                       to_char(s.last_refreshed_at at time zone 'UTC',
+                               'YYYY-MM-DD HH24:MI:SS') last_refreshed_utc,
+                       s.failed_posts last_failed_posts
+                from totals t
+                left join blog_refresh_state s on s.id = 1
+                ```
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        advanced {
+            htmlDomId: blog-refresh-summary
+        }
+        reportLayout {
+            numberOfRows: 1
+        }
+        componentAppearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Report--altRowsDefault
+                t-Report--rowHighlight
+            ]
+        }
+        pagination {
+            type: rowRangesXToYOfZWithPagination
+        }
+        messages {
+            whenNoDataFound: No records to display.
+        }
+
+        column KNOWN_POSTS (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Known Posts
+            }
+            layout {
+                sequence: 10
+            }
+        )
+
+        column LAST_CHECKED_UTC (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Last Successful Check (UTC)
+            }
+            layout {
+                sequence: 40
+            }
+        )
+
+        column LAST_FAILED_POSTS (
+            reportColumnQueryId: 6
+            derivedColumn: N
+            heading {
+                heading: Failures in Last Refresh
+            }
+            layout {
+                sequence: 60
+            }
+        )
+
+        column LAST_REFRESHED_UTC (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            heading {
+                heading: Last Refresh Completed (UTC)
+            }
+            layout {
+                sequence: 50
+            }
+        )
+
+        column SUGGESTED_POSTS (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: Suggested Refreshes
+            }
+            layout {
+                sequence: 30
+            }
+        )
+
+        column TOTAL_CHUNKS (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Total Chunks
+            }
+            layout {
+                sequence: 20
+            }
+        )
+
+    )
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region maintenance (
+        name: Maintain Blog Posts
+        type: staticContent
+        source {
+            htmlCode:
+                ```html
+                <p>Check WordPress for new or changed posts, then refresh the suggested posts to update their search chunks.</p>
+                <p>Unknown posts need one refresh to establish their indexing baseline. Posts missing from WordPress are retained for review.</p>
+                <p>Background Jobs updates every five seconds. Use Reload reports to update all counts. Source dates are shown in UTC.</p>
+                ```
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    pageItem P3_ACTION (
+        type: hidden
+        layout {
+            sequence: 10
+            region: @maintenance
+            slot: regionBody
+        }
+        security {
+            sessionStateProtection: restricted
+        }
+    )
+
+    button check-updates (
+        buttonName: CHECK_UPDATES
+        label: Check for updates
+        layout {
+            sequence: 10
+            region: @maintenance
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text
+        }
+        behavior {
+            executeValidations: false
+            showProcessing: true
+        }
+    )
+
+    button refresh-suggested (
+        buttonName: REFRESH_SUGGESTED
+        label: Refresh suggested posts
+        layout {
+            sequence: 20
+            region: @maintenance
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text
+            hot: true
+        }
+        behavior {
+            executeValidations: false
+            showProcessing: true
+        }
+    )
+
+    button reload-reports (
+        buttonName: RELOAD_REPORTS
+        label: Reload reports
+        layout {
+            sequence: 30
+            region: @maintenance
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text
+        }
+        behavior {
+            action: redirectThisApp
+            target: {
+                page: 3
+            }
+        }
+    )
+
+    process blog-maintenance (
+        name: Blog Maintenance
+        type: executionChain
+        backgroundExecution {
+            runInBackground: true
+            executionsLimit: 1
+        }
+        serialization {
+            serialize: true
+            whenAlreadyRunning: error
+        }
+        execution {
+            sequence: 20
+        }
+        successMessage {
+            successMessage: Blog maintenance submitted. Follow its progress in Background Jobs.
+        }
+        advanced {
+            executionMappingIdentifier: 10549844963246637
+        }
+        serverSideCondition {
+            type: expression
+            language: javaScript-mle
+            javaScriptExpression: "[\"CHECK_UPDATES\", \"REFRESH_SUGGESTED\"].includes(apex.env.REQUEST)"
+        }
+    )
+
+    process prepare-maintenance (
+        name: Prepare Blog Maintenance
+        type: executeCode
+        source {
+            language: javaScript-mle
+            javaScriptCode:
+                ```javascript-mle
+                const action = apex.env.REQUEST;
+                apex.env.P3_ACTION = ["CHECK_UPDATES", "REFRESH_SUGGESTED"].includes(action) ? action : null;
+                ```
+        }
+        execution {
+            sequence: 10
+        }
+        advanced {
+            executionMappingIdentifier: 10549739879246637
+        }
+    )
+
+    process run-maintenance (
+        name: Check or Refresh Blog Posts
+        type: executeCode
+        executionChain: @blog-maintenance
+        source {
+            language: javaScript-mle
+            javaScriptCode:
+                ```javascript-mle
+                (async () => {
+                    const background = plsffi.resolvePackage("APEX_BACKGROUND_PROCESS");
+                    const logger = plsffi.resolvePackage("LOGGER.LOGGER");
+                    const logScope = "semantic_search.apex.blog_refresh";
+                    try {
+                        logger.log_info({
+                            p_text: "Starting background blog maintenance",
+                            p_scope: logScope,
+                            p_extra: "action: " + apex.env.P3_ACTION
+                        });
+                        const blogPosts = await import("blog_posts");
+                        const options = {
+                            onProgress({ message, sofar, total }) {
+                                background.set_status({ p_message: message });
+                                background.set_progress({ p_sofar: sofar, p_totalwork: Math.max(total, 1) });
+                            }
+                        };
+                        if (apex.env.P3_ACTION === "CHECK_UPDATES") {
+                            await blogPosts.checkForUpdates(options);
+                        } else if (apex.env.P3_ACTION === "REFRESH_SUGGESTED") {
+                            await blogPosts.refreshSuggestedPosts(options);
+                        } else {
+                            throw new Error("Unsupported blog maintenance operation");
+                        }
+                        logger.log_info({
+                            p_text: "Committing background blog maintenance",
+                            p_scope: logScope,
+                            p_extra: "action: " + apex.env.P3_ACTION
+                        });
+                        apex.conn.execute("commit");
+                    } catch (error) {
+                        logger.log_error({
+                            p_text: "Background blog maintenance failed: " + String(error.message || error).slice(0, 1000),
+                            p_scope: logScope,
+                            p_extra: "action: " + apex.env.P3_ACTION + "\n" + String(error.stack || "")
+                        });
+                        apex.conn.execute("rollback");
+                        background.set_status({
+                            p_message: "Maintenance failed: " + String(error.message || error).slice(0, 1000)
+                        });
+                        throw error;
+                    }
+                })();
+                ```
+        }
+        execution {
+            sequence: 10
+        }
+        advanced {
+            executionMappingIdentifier: 10549914906246638
+        }
+    )
+
+    branch (
+        name: Return to Blog Refresh
+        execution {
+            sequence: 10
+        }
+        behavior {
+            target: {
+                page: 3
+            }
+        }
+    )
+
+)
+

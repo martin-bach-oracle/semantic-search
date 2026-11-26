@@ -45,6 +45,9 @@ app NEIL_TEST_APP101 (
     sessionStateProtection {
         checksumSalt: 2984164CFF237F84CA2C60397C48B3986DF0F8EEB114F14FD9834979A70BB0DE
     }
+    databaseSession {
+        mleEnvironment: SEMANTIC_SEARCH_ENV
+    }
     runtime {
         allowFeedback: true
     }
