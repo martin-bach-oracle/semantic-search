@@ -1,10 +1,9 @@
 {
+  "name": "blogpost-search",
   "type": "module",
-  "version": "1.0.0",
-  "author": {
-    "email": "development@the-playground.de",
-    "name": "Martin Carsten Bach"
-  },
+  "version": "1.0.3",
+  "author": "Martin Carsten Bach, <development@the-playground.de (https://martincarstenbach.com)",
+  "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "html-to-text": "^10.0.1",
@@ -15,5 +14,8 @@
     "@types/node": "^26.6.6",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
+  },
+  "scripts": {
+    "build": "npx esbuild src/javascript/fetchPosts.js --bundle --outfile=build/bundle.js --format=esm --external:'mle-js-fetch'"
   }
 }

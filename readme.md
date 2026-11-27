@@ -1,11 +1,12 @@
 # Semantic Search
 
-This demo uses Oracle AI Database, JavaScript MLE, AI Vector Search and Oracle APEX
-to search posts from [martincarstenbach.com](https://martincarstenbach.com/) by meaning.
-It fetches WordPress posts, converts HTML to plain text, stores the posts, and creates
-chunk embeddings with the database ONNX model `DOC_MODEL`.
+This demo uses Oracle AI Database 26ai, JavaScript Multilingual Engine (MLE), AI Vector Search and Oracle APEX to search posts from [martincarstenbach.com](https://martincarstenbach.com/) by meaning. It fetches WordPress posts, converts HTML to plain text, stores the posts, and creates chunk embeddings with the database's ONNX model `all_MiniLM_L12_v2` stored as `DOC_MODEL`.
+
+![Screenshot of the application's main page](./images/landing-page-apex-application.png)
 
 ## Application pages
+
+The APEX application consists of the following pages:
 
 | Page | Purpose |
 | --- | --- |
@@ -13,50 +14,43 @@ chunk embeddings with the database ONNX model `DOC_MODEL`.
 | 2 — Semantic Search | Searches matching passages and links to the original blog posts. |
 | 3 — Blog Refresh | Checks source changes, reports chunk counts and refreshes suggested posts in the background. |
 
-The app uses Oracle APEX Accounts authentication. Blog Refresh has no additional
-maintenance role restriction. This repository is a lab/demo setup.
+The app uses Oracle APEX Accounts authentication. Blog Refresh has no additional maintenance role restriction.
+
+> [!WARNING]
+> This repository is a lab/demo setup! It has not been properly vetted for production use.
 
 ## Current release and source layout
 
-SQLcl Projects release **1.0.3** contains the incremental refresh schema, updated
-MLE bundle, environment mappings and singleton seed. Updated APEX SQL exports are
-included in the release hierarchy. The default deployment now uses application
-**101**, workspace **DEMOUSER** and parsing schema **DEMOUSER**; it no longer remaps
-the app to 1042.
+[SQLcl Projects](https://docs.oracle.com/en/database/oracle/sql-developer-command-line/26.3/sqcug/database-application-cicd.html) release **1.0.3** contains the incremental refresh schema, updated
+MLE bundle, environment mappings and singleton seed. Updated APEX SQL exports are included in the release hierarchy. The default deployment now uses application **101**, workspace **DEMOUSER** and parsing schema **DEMOUSER**.
 
 | Location | Purpose |
 | --- | --- |
 | `src/javascript/fetchPosts.js` | Editable ingestion/refresh implementation, Logger tracing and JSDoc. |
-| `src/database/demouser/mle_modules/` | Exported MLE module SQL/JavaScript; regenerate through the development/export workflow. |
-| `src/database/demouser/mle_envs/semantic_search_env.sql` | Maps `blog_posts` to `BUNDLE_MODULE` and `ords` to `ORDS_MODULE`. |
+| `src/database/demouser/` | Exported database objects relevant to the application; regenerate through the development/export workflow. |
 | `src/database/demouser/apex_apps/f101/readable/` | APEXlang source, including Page 3, navigation and static assets. |
 | `src/database/demouser/apex_apps/f101/f101.sql` | SQL application export. |
-| `src/database/demouser/tables/`, `views/`, `ref_constraints/` | Exported schema definitions and relationships. |
 | `dist/` | Versioned SQLcl Projects changesets and application/ORDS deployment exports. |
-| `dist/releases/1.0.3/changes/add-incremental-refresh/_custom/seed-data.sql` | Inserts the `BLOG_REFRESH_STATE` singleton only if missing. |
 | `.dbtools/` | SQLcl project configuration, export filters and formatting rules. |
-| `setup/` | Local container initialization scripts for outbound HTTP access and the model directory. |
+| `setup/` | _Local_ container initialization scripts for outbound HTTP access and the model directory. |
 
-The source declares APEXlang **26.1.0+3102** and SQLcl **26.3.1.0**. The project
-exports both APEXlang and SQL application source; `apex.apexlang` is currently
-`false`, so the project workflow uses the SQL app export as its source of truth.
+The source declares APEXlang **26.1.0+3102** and SQLcl **26.3.1.0**.
+
+Updating the code in `src/javascript/fetchPosts.js` requires a rebuild of the bundle module using `esbuild`. Use `npm run build` to do that.
 
 ## Prerequisites
 
-- Oracle Database with MLE, AI Vector Search and Oracle Text available. The intended
-  cloud target is Autonomous AI Database 26ai; a local Compose setup is also supplied.
-- Oracle APEX with JavaScript MLE and background page processing available.
+- Oracle AI Database 26ai with MLE, AI Vector Search and Oracle Text available. The intended cloud target is Autonomous AI Database 26ai; a local Compose setup is also supplied.
+- Oracle APEX 26.1 or later with JavaScript MLE and background page processing available.
 - SQLcl compatible with the checked-in project configuration.
 - Node.js and npm to bundle the JavaScript dependencies for development.
 - OraOpenSource Logger installed in schema `LOGGER`, accessible to `DEMOUSER`.
-- The augmented `all_MiniLM_L12_v2.onnx` model loaded as `DEMOUSER.DOC_MODEL`.
-- Database outbound HTTPS access to `public-api.wordpress.com`.
+- The augmented `all_MiniLM_L12_v2.onnx` model loaded as `DEMOUSER.DOC_MODEL`, provided via `setup/02_ai_model.sql` or alternatively via `dbms_cloud`.
+- Database outbound HTTPS access to `public-api.wordpress.com`, facilitated via `setup/01_ace.sql` or `dbms_cloud`.
 
-### Autonomous Database
+## Deploying against Oracle AI Autonomous Database
 
-On Autonomous Database, APEX and ORDS are provided by the service. Create the
-application owner as an administrator. The following is the existing lab privilege
-recipe, rather than a minimal production role definition.
+On Autonomous Database, APEX and ORDS are provided by the service. Create the application owner as an administrator. The following is the existing lab privilege recipe, rather than a minimal production role definition.
 
 ### Create the DEMOUSER account
 
@@ -91,17 +85,92 @@ grant CREATE VIEW to DEMOUSER;
 
 This will become the parsing schema for the APEX application.
 
+### Create the network ACE
+
+Before the database can reach Wordpress it must be granted outbound network traffic. Use the example in `setup/01_ace.sql` to allow DEMOUSER to reach Wordpress.
+
+### Load the ONNX model into ADB-S
+
+Before you can create the ONNX model in the database you need to upload it to object storage in OCI. Start by creating a new bucket; skip this step if you have a suitable bucket already. The following instructions use the [OCI CLI](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/cliconcepts.htm) to do so, alternatively use the browser interface.
+
+```sh
+oci os bucket create \
+  --profile DEFAULT \
+  --region ${YOUR_REGION} \
+  --compartment-id ${COMPARTMENT_OCID} \
+  --name 'onnx-model-bucket' \
+  --public-access-type NoPublicAccess \
+  --storage-tier Standard
+```
+
+Next upload the [all_MiniLM_L12_v2.onnx](https://adwc4pm.objectstorage.us-ashburn-1.oci.customer-oci.com/p/fU1V-voY2VBhhqMPjhCC57Up77ROK9u6GN_j3-uGi_EzIdHm9XDn-RfnZS5bV0cN/n/adwc4pm/b/OML-ai-models/o/Oracle%20Machine%20Learning%20AI%20models.htm) file to the storage bucket. Adjust names and paths as needed.
+
+```sh
+oci os object put \
+  --profile DEFAULT \
+  --region ${YOUR_REGION} \
+  --bucket-name 'onnx-model-bucket' \
+  --file '/path/to/all_MiniLM_L12_v2.onnx' \
+  --name 'all_MiniLM_L12_v2.onnx'
+```
+
+Create an Access Token for it and use it with `DBMS_CLOUD.create_credential`.
+
+```sh
+oci iam auth-token create \
+  --profile DEFAULT \
+  --user-id 'ocid1.user.oc1..REPLACE_ME' \
+  --description 'DBMS_CLOUD Object Storage access' \
+  --query 'data.token' \
+  --raw-output
+```
+
+Connect to the database as DEMOUSER, and create your credential. This assumes you use the DEFAULT identity domain, if you don't, adjust the command accordingly.
+
+```sql
+begin
+    dbms_cloud.create_credential(
+        credential_name => 'OCI_OBJECT_STORAGE',
+        username        => 'your.name@example.com',
+        password        => '<generated-auth-token>'
+    );
+end;
+/
+```
+
+With the credential in place you can create the DOC_MODEL in the database:
+
+```sql
+declare
+  model_source blob := null;
+begin
+    model_source := dbms_cloud.get_object(
+      credential_name => 'OCI_OBJECT_STORAGE',
+      object_uri => 'https://objectstorage.<region>.oraclecloud.com/n/<namespace>/b/onnx-model-bucket/o/all_MiniLM_L12_v2.onnx'
+    );
+  
+    dbms_vector.load_onnx_model('DOC_MODEL', model_source);
+end;
+/
+```
+
+Use `oci os ns get` to retrieve your namespace if needed.
+
+Verify if the model has been created using `select * from dm_user_models`.
+
 ## Local Compose setup
 
 The current `compose.yml` selects:
 
-- Database image `ghcr.io/gvenzl/oracle-free:23.26.3`, exposed on port 1521.
-- ORDS image `container-registry.oracle.com/database/ords:26.2.2`, with HTTP on port 8080.
+- Database image `ghcr.io/gvenzl/oracle-free:23.26.4`, exposed on port 1521.
+- ORDS image `container-registry.oracle.com/database/ords:26.3.1`, with HTTP on port 8080.
 - Persistent volumes for database data and ORDS configuration.
 - `./apex` mounted into the ORDS container and `./setup` mounted as database
   initialization scripts.
 
-Extract the APEX distribution you intend to run into `./apex`. For example:
+### Install ORDS and APEX in the database
+
+Extract the APEX distribution you intend to run (either 26.1 or 26.2) into `./apex`. For example:
 
 ```sh
 curl -LO https://download.oracle.com/otn_software/apex/apex_26.2_en.zip
@@ -121,110 +190,59 @@ Start the services with Docker Compose, or adapt the invocation for your Podman 
 docker compose up -d
 ```
 
-The database creates `DEMOUSER` through its `APP_USER` setting. On first database
-initialization, `setup/01_ace.sql` grants that schema HTTP access to the WordPress
-API, and `setup/02_ai_model.sql` creates `MODEL_DIR` for `/opt/oracle/ai` with
-read/write grants. They do not load the model or install this project's release.
-Existing database volumes do not reapply initialization scripts as schema upgrades.
+The database creates `DEMOUSER` through its `APP_USER` setting. On first database initialization, `setup/01_ace.sql` grants that schema HTTP access to the WordPress API, and `setup/02_ai_model.sql` creates `MODEL_DIR` for `/opt/oracle/ai` with read/write grants. They do not load the model or install this project's release. Existing database volumes do not reapply initialization scripts as schema upgrades.
 
-## Common setup and installation
+### Load the ONNX model into the local database
 
-### Schema, workspace and network access
+Use `deploy-local.sh` to load the model into the database.
 
-Ensure `DEMOUSER` has the privileges needed for the schema objects, model loading
-and MLE execution. Background maintenance also needs `CREATE JOB` and a working
-APEX background-processing setup. Do not assume that creating the local application
-user gives it every privilege in the account recipe above.
+## Common setup and installation steps
 
-Create an APEX workspace named `DEMOUSER` using `DEMOUSER` as its parsing schema.
-Review `dist/env/default.properties` before installing into a different workspace,
-schema or application ID. The APEXlang deployment file also specifies application 101.
+At this point, the remaining steps equally apply to the local setup and Autonomous AI Database alike.
 
-For Autonomous Database or an existing local database, configure outbound access
-for `DEMOUSER` to `public-api.wordpress.com` separately. The local setup scripts
-include `ALTER SESSION SET CONTAINER` and are not portable ADB installation scripts.
+### APEX Workspace
+
+Ensure `DEMOUSER` has the privileges needed for the schema objects, model loading and MLE execution. Background maintenance also needs `CREATE JOB` and a working APEX background-processing setup.
+
+Log in to the APEX administration interface. Create an APEX workspace named `DEMOUSER` using the existing `DEMOUSER` account as its parsing schema.
+
+Review `dist/env/default.properties` before installing into a different workspace, schema or application ID. The APEXlang deployment file also specifies application 101.
 
 ### Install Logger
 
-Install the [OraOpenSource Logger framework](https://github.com/OraOpenSource/Logger)
-into schema `LOGGER` using its installation instructions. The JavaScript resolves
-`LOGGER.LOGGER` explicitly, so no public synonym is required. As Logger's owner or
-an appropriately privileged administrator, grant the application schema access:
+Install the [OraOpenSource Logger framework](https://github.com/OraOpenSource/Logger) into schema `LOGGER` using its installation instructions. The JavaScript resolves `LOGGER.LOGGER` explicitly, so no public synonym is required. As Logger's owner or an appropriately privileged administrator, grant the application schema access:
 
 ```sql
 grant execute on logger.logger to demouser;
 grant select on logger.logger_logs to demouser;
 ```
 
-The SELECT grant supports inspecting logs directly. The exported `DEMOUSER.LOG_TABLE`
-is a legacy table; the current implementation logs through the Logger package instead.
-Verify a real Logger call works as `DEMOUSER`, not just that its FFI wrapper resolves.
-
-### Load the embedding model
-
-Both document indexing and search use `DOC_MODEL`. For the local setup, copy the
-augmented `all_MiniLM_L12_v2.onnx` file into `/opt/oracle/ai` inside the database
-container and make it readable by the database OS user. Then load it as `DEMOUSER`:
-
-```sql
-begin
-    dbms_vector.load_onnx_model(
-        directory  => 'MODEL_DIR',
-        file_name  => 'all_MiniLM_L12_v2.onnx',
-        model_name => 'DOC_MODEL'
-    );
-end;
-/
-```
-
-On Autonomous Database, use the supported model upload/loading process and retain
-the schema model name `DOC_MODEL`. The local directory setup is not applicable
-there. The notes under `model/` use a different example model name; the application
-and refresh code specifically reference `DOC_MODEL`.
-
-The release does not load the ONNX binary. `deploy-local.sh` contains a local model
-setup example, but it also drops/reloads the model and enables shell tracing. Use
-the focused module-loading instructions below for code updates instead of treating
-that script as an incremental schema migration or exposing passwords in traced output.
+The SELECT grant supports inspecting logs directly. The exported `DEMOUSER.LOG_TABLE` is a legacy table; the current implementation logs through the Logger package instead. Verify a real Logger call works as `DEMOUSER`, not just that its FFI (Foreign Function Interface, a part of MLE/JavaScript) wrapper resolves.
 
 ### Install or upgrade the release
 
-Connect in SQLcl as the intended application schema, using an interactive or saved
-connection. Run the packaged installer from `dist` so its relative changelog and
-properties references resolve there:
+Connect in SQLcl as DEMOUSER, using an interactive or saved connection. Run the packaged installer (create the artifact if it isn't present):
 
 ```sql
-cd dist
-@install.sql
-cd ..
+project gen-artifact
+project deploy -file artifact/semantic-search-1.0.3.zip
 ```
 
-The main changelog includes releases through `1.0.3`. That release adds the source
-metadata/state tables, indexing baseline columns, status view, updated bundle,
-`blog_posts` environment mapping and rerunnable singleton seed. The updated app
-SQL export is included by the APEX changelog.
+The main changelog includes releases through `1.0.3`. That release adds the source metadata/state tables, indexing baseline columns, status view, updated bundle, `blog_posts` environment mapping and rerunnable singleton seed. The updated app SQL export is included by the APEX changelog.
 
-The seed initializes `BLOG_REFRESH_STATE.ID = 1` without resetting existing timestamps
-or counters. It is a custom data changeset because normal schema export does not
-capture seed rows; `.dbtools/filters/dml.filters` disables table-data export by default.
-
-These are source-based installation instructions. A successful export or generated
-release is not proof of a successful clean-target deployment; verify the installed
-objects and application after loading the artifact.
+The seed initializes `BLOG_REFRESH_STATE.ID = 1` without resetting existing timestamps or counters. It is a custom data changeset because normal schema export does not capture seed rows; `.dbtools/filters/dml.filters` disables table-data export by default.
 
 ## Using the application
 
-### Semantic Search
+Log into the APEX application as DEMOUSER.
 
-Enter a natural-language question on Page 2. Its vector search configuration uses
-`BLOGPOST_SEARCH_SOURCE` and the `DEMOUSER.DOC_MODEL` provider. The view joins posts
-to their chunks and exposes titles, links, text and embeddings. Matches represent
-passages, so multiple matches can belong to one post. Links open the original posts.
+### Performing a semantic search
+
+Enter a natural-language question on Page 2. Its vector search configuration uses `BLOGPOST_SEARCH_SOURCE` and the `DEMOUSER.DOC_MODEL` provider. The view joins posts to their chunks and exposes titles, links, text and embeddings. Matches represent passages, so multiple matches can belong to one post. Links open the original posts in a new tab.
 
 ### Blog Refresh
 
-Page 3 has an index summary, a per-post chunk/status report and a background-job
-report. Use the actions in this order:
+Page 3 has an index summary, a per-post chunk/status report and a background-job report. Use the actions in this order:
 
 1. **Check for updates** fetches source metadata without generating embeddings.
    It validates pagination headers, row counts, unique IDs and UTC timestamps
@@ -247,38 +265,19 @@ report. Use the actions in this order:
 | Missing from source | A successful source check no longer finds the post; it is retained for review. |
 | Current | None of the preceding conditions applies. |
 
-Only source-present New, Changed, Unknown, Missing chunks and Failed posts are
-suggested for refresh. Before the first successful check, zero suggestions does
-not establish freshness. Legacy posts need an initial refresh to establish their
-indexing baselines.
+Only source-present New, Changed, Unknown, Missing chunks and Failed posts are suggested for refresh. Before the first successful check, zero suggestions does not establish freshness. Legacy posts need an initial refresh to establish their indexing baselines.
 
-`BLOGPOSTS.MODIFIED` stores the indexed source's UTC edit timestamp, not the load
-time. `INDEXED_AT` records successful indexing time, and `INDEXED_CHUNK_COUNT`
-records the expected chunk count. `BLOGPOST_SOURCE` keeps the most recent checked
-metadata separately; `BLOG_REFRESH_STATE` records check/refresh outcomes.
+`BLOGPOSTS.MODIFIED` stores the indexed source's UTC edit timestamp, not the load time. `INDEXED_AT` records successful indexing time, and `INDEXED_CHUNK_COUNT` records the expected chunk count. `BLOGPOST_SOURCE` keeps the most recent checked metadata separately; `BLOG_REFRESH_STATE` records check/refresh outcomes.
 
-The two actions run in a serialized APEX background execution chain. Page code is
-MLE/JavaScript and imports `blog_posts` directly; no additional PL/SQL call specs
-are used. A singleton database row lock also prevents overlapping maintenance
-from other callers. The app uses its normal authentication without a separate
-maintenance access restriction.
+The two actions run in a serialized APEX background execution chain. Page code is MLE/JavaScript and imports `blog_posts` directly; no additional PL/SQL call specs are used. A singleton database row lock also prevents overlapping maintenance from other callers. The app uses its normal authentication without a separate maintenance access restriction.
 
-Each post has a savepoint. If its replacement fails, the old post/chunks are
-restored, `LAST_ERROR` is recorded and the batch continues. A successful background
-operation commits once at the end; the module itself never commits. A batch-level
-failure rolls back the operation. Check the failed-post count and errors even when
-the background job finishes successfully. Missing source posts are not deleted.
+Each post has a savepoint. If its replacement fails, the old post/chunks are restored, `LAST_ERROR` is recorded and the batch continues. A successful background operation commits once at the end; the module itself never commits. A batch-level failure rolls back the operation. Check the failed-post count and errors even when the background job finishes successfully. Missing source posts are not deleted.
 
-The current pipeline converts titles and bodies with `html-to-text`, then calls
-`UTL_TO_TEXT`, `UTL_TO_CHUNKS` and `UTL_TO_EMBEDDINGS`. Chunking uses word-based
-`max: 200`, `overlap: 20`, recursive splitting and a 4,000-byte limit matching
-`CHUNK_DATA`. JSON extraction fails explicitly on conversion errors.
+The current pipeline converts titles and bodies with `html-to-text`, then calls `UTL_TO_TEXT`, `UTL_TO_CHUNKS` and `UTL_TO_EMBEDDINGS`. Chunking uses word-based `max: 200`, `overlap: 20`, recursive splitting and a 4,000-byte limit matching `CHUNK_DATA`. JSON extraction fails explicitly on conversion errors.
 
 ### Refresh from SQLcl
 
-The existing `BLOG_POSTS_PACKAGE.REFRESHBLOGPOSTS` call specification still invokes
-the JavaScript export. It now checks the source and refreshes candidates incrementally.
-The caller owns the transaction and must commit or roll back to release the lock:
+The existing `BLOG_POSTS_PACKAGE.REFRESHBLOGPOSTS` call specification still invokes the JavaScript export. It now checks the source and refreshes candidates incrementally. The caller owns the transaction and must commit or roll back to release the lock:
 
 ```sql
 begin
@@ -292,9 +291,7 @@ end;
 /
 ```
 
-The separate JavaScript exports are `checkForUpdates()` and `refreshSuggestedPosts()`.
-Their optional synchronous `onProgress` callback reports phase-specific messages
-and counters to the APEX background process. Initial indexing may take a while.
+The separate JavaScript exports are `checkForUpdates()` and `refreshSuggestedPosts()`. Their optional synchronous `onProgress` callback reports phase-specific messages and counters to the APEX background process. Initial indexing may take a while.
 
 ## Development and SQLcl Projects workflow
 
@@ -302,8 +299,7 @@ and counters to the APEX background process. Initial indexing may take a while.
 2. Bundle JavaScript from the repository root:
 
    ```sh
-   npm ci
-   npx esbuild src/javascript/fetchPosts.js --bundle --outfile=build/bundle.js --format=esm --external:mle-js-fetch
+   npm run build
    ```
 
 3. Connected as `DEMOUSER` in SQLcl, load the module into the development database:
@@ -329,45 +325,15 @@ and counters to the APEX background process. Initial indexing may take a while.
    Keep seed data/custom changesets and module/environment dependencies in the
    release. Do not manually edit historical deployed changesets.
 
-The configured saved connection name is local to the developer's machine. Select
-the intended connection rather than assuming the name exists elsewhere. See the
-[SQLcl Projects quick start](https://docs.oracle.com/en/database/oracle/sql-developer-command-line/26.3/sqcug/quick-start.html)
-for release and artifact commands.
+The configured saved connection name is local to the developer's machine. Select the intended connection rather than assuming the name exists elsewhere. See the [SQLcl Projects quick start](https://docs.oracle.com/en/database/oracle/sql-developer-command-line/26.3/sqcug/quick-start.html) for release and artifact commands.
 
-### SQLcl 26.3.1 staging issues encountered
+## ORDS and MCP prototype (experimental)
 
-- Changing an MLE environment can trigger an `ObjectDiff.instantiate(...).alters()`
-  NullPointerException. Excluding the environment from automatic staging avoids
-  that path but also omits its migration: retain an explicit environment changeset.
-  Release `1.0.3` already includes the required environment definition.
-- The formatter can report a JavaScript syntax error inside the MLE bundle while
-  staging continues with the unformatted statement. Check that the generated module
-  matches its source. `project config set -name export.format.enable -value false`
-  can suppress this formatter step; the checked-in configuration currently enables it.
-- An error followed by the completion banner is not sufficient evidence that every
-  change was staged. Inspect the changelog and referenced files before releasing.
-- `Duplicate row skipped in ORDS changelog` reports include deduplication.
-  `Changes not staged for commit` is Git status: SQLcl staging does not run `git add`.
+`ORDS_MODULE.semanticSearch()` provides a SQL-backed cosine similarity search over `BLOGPOST_SEARCH_SOURCE`, using `DOC_MODEL` to embed the query. By default it returns five `title`/`link` results with lowercase field names; several may refer to one post. The `ords` import remains in `SEMANTIC_SEARCH_ENV`.
 
-## ORDS and MCP prototype
+The TypeScript prototype at `src/typescript/mcp.ts` exposes a stdio MCP tool named `fetchSearchResults`. It expects an HTTP service at `http://localhost:8080/ords/demouser/api/search :searchTerm` and URL-encodes the text.
 
-`ORDS_MODULE.semanticSearch()` provides a SQL-backed cosine similarity search over
-`BLOGPOST_SEARCH_SOURCE`, using `DOC_MODEL` to embed the query. By default it returns
-five `title`/`link` results with lowercase field names; several may refer to one post.
-The `ords` import remains in `SEMANTIC_SEARCH_ENV`.
-
-The TypeScript prototype at `src/typescript/mcp.ts` exposes a stdio MCP tool named
-`fetchSearchResults`. It expects an HTTP service at
-`http://localhost:8080/ords/demouser/api/search/:searchTerm` and URL-encodes the text.
-
-**The current schema and packaged ORDS exports enable the schema and define roles
-and privileges, but do not define that search module/template/handler.** The helper
-module and MCP client alone do not create the endpoint. Configure/restore the REST
-handler separately before testing the MCP prototype, including its
-`SEMANTIC_SEARCH_ENV` setting and `ords` import. Existing database handler state has
-not been checked by this documentation update. The prototype is not a verified
-end-to-end deployment path, and the repository does not supply application-specific
-OAuth setup for it.
+**The current schema and packaged ORDS exports enable the schema and define roles and privileges, but do not define that search module/template/handler.** The helper module and MCP client alone do not create the endpoint. Configure/restore the REST handler separately before testing the MCP prototype, including its `SEMANTIC_SEARCH_ENV` setting and `ords` import. Existing database handler state has not been checked by this documentation update. The prototype is not a verified end-to-end deployment path, and the repository does not supply application-specific OAuth setup for it.
 
 ## Troubleshooting
 
@@ -393,6 +359,4 @@ OAuth setup for it.
 - **REST/MCP fails:** first check whether the expected handler exists, then inspect
   its environment and the ORDS logs. It is absent from the current exported setup.
 
-Offline JavaScript/APEXlang checks verify source structure, not live imports,
-network access, Logger privileges, model behavior, background execution or complete
-release deployment. Validate those against the target database and application.
+Offline JavaScript/APEXlang checks verify source structure, not live imports, network access, Logger privileges, model behavior, background execution or complete release deployment. Validate those against the target database and application.
