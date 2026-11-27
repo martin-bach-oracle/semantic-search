@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 
 #
-# Deploy script to setup the environment and deploy the code to Oracle Database
-# Does not cover the MCP server
+# Load the embedding model as DEMOUSER.DOC_MODEL in the local database.
+# Requires the MODEL_DIR directory and grants from setup/02_ai_model.sql.
+#
+# Usage: bash deploy-local.sh [database-container-name]
+#
+# Replaces an existing DOC_MODEL. Does not deploy application code or schema DDL.
 #
 
-set -euxo pipefail
+set -euo pipefail
 
 # --- Globals
 MODEL_DIR=./model
@@ -24,12 +28,12 @@ CONTAINER_RUNTIME=undefined
 command -v podman && CONTAINER_RUNTIME=podman
 command -v docker && CONTAINER_RUNTIME=docker
 
-if [[ CONTAINER_RUNTIME == undefined ]]; then
+if [[ "${CONTAINER_RUNTIME}" == undefined ]]; then
     echo "ERR: neither docker nor podman found, exiting"
     exit 1
 fi
 
-if [ "$(${CONTAINER_RUNTIME} inspect -f '{{.State.Running}}' ${CONTAINER_NAME} 2>/dev/null)" != "true" ]; then
+if [ "$("${CONTAINER_RUNTIME}" inspect -f '{{.State.Running}}' "${CONTAINER_NAME}" 2>/dev/null)" != "true" ]; then
   echo "ERR: DB container ${CONTAINER_NAME} is NOT running, exiting"
   exit 1
 fi
@@ -45,29 +49,31 @@ fi
 # Download the ONNX model and copy it to the container unless it exists
 #
 
-if [[ -z $("${CONTAINER_RUNTIME}" exec -it "${CONTAINER_NAME}" ls /opt/oracle/ai/all_MiniLM_L12_v2.onnx) ]]; then
+if ! "${CONTAINER_RUNTIME}" exec "${CONTAINER_NAME}" test -f /opt/oracle/ai/all_MiniLM_L12_v2.onnx; then
 
     [[ ! -d "${MODEL_DIR}" ]] && mkdir -vp "${MODEL_DIR}"
-    [[ ! -f "${MODEL_FILE}" ]] && {
+    if [[ ! -f "${MODEL_DIR}/all_MiniLM_L12_v2.onnx" ]]; then
+      if [[ ! -f "${MODEL_FILE}" ]]; then
 
         # model file not found. Initiating download from the object storage bucket.
         # see https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/sql-quick-start-using-vector-embedding-model-uploaded-database.html
         # for details on the model
         
-        curl -Lo "${MODEL_FILE}" \
+        curl -fLo "${MODEL_FILE}" \
             https://adwc4pm.objectstorage.us-ashburn-1.oci.customer-oci.com/p/TtH6hL2y25EypZ0-rrczRZ1aXp7v1ONbRBfCiT-BDBN8WLKQ3lgyW6RxCfIFLdA6/n/adwc4pm/b/OML-ai-models/o/all_MiniLM_L12_v2_augmented.zip
 
+      fi
 
-        unzip -q "${MODEL_FILE}" -d "${MODEL_DIR}" || {
+      unzip -q "${MODEL_FILE}" -d "${MODEL_DIR}" || {
             echo "Failed to unzip the model file."
             exit 1;
         }
-    }
+    fi
 
     # copy extracted ONNX model to container and make sure oracle can read it
-    "${CONTAINER_RUNTIME}" exec -it "${CONTAINER_NAME}" mkdir -p /opt/oracle/ai
+    "${CONTAINER_RUNTIME}" exec "${CONTAINER_NAME}" mkdir -p /opt/oracle/ai
     "${CONTAINER_RUNTIME}" cp "${MODEL_DIR}/all_MiniLM_L12_v2.onnx" "${CONTAINER_NAME}":/opt/oracle/ai
-    "${CONTAINER_RUNTIME}" exec -it --user root "${CONTAINER_NAME}" chown 54321:54321 /opt/oracle/ai/all_MiniLM_L12_v2.onnx
+    "${CONTAINER_RUNTIME}" exec --user root "${CONTAINER_NAME}" chown 54321:54321 /opt/oracle/ai/all_MiniLM_L12_v2.onnx
 
 fi
 
@@ -75,20 +81,18 @@ fi
 # MAIN
 #
 
-[[ -z "${APP_USER_PASSWORD}" ]] && { 
+[[ -z "${APP_USER_PASSWORD:-}" ]] && {
     echo "APP_USER_PASSWORD is not set in the .env file, yet it should have been ... please check!" 
     exit 1;
 }
 
-# simulate a build by bundling the JavaScript code into a single file.
-# load the doc model into demouser's schema
-npx esbuild src/javascript/fetchPosts.js --bundle --outfile=build/bundle.js --format=esm --external:"mle-js-fetch" && \
+# Load the model only; JavaScript modules and releases are deployed separately.
 {
+    echo whenever oserror exit 1
     echo whenever sqlerror exit 1
-    
-    echo mle create-module -filename build/bundle.js -module-name bundle_module -replace
 
     echo "exec dbms_vector.drop_onnx_model (model_name => 'DOC_MODEL', force => true);"
     echo "exec dbms_vector.load_onnx_model (directory => 'MODEL_DIR', file_name  => 'all_MiniLM_L12_v2.onnx', model_name => 'doc_model');"
     echo commit;
-} | ${SQLCL} demouser/"${APP_USER_PASSWORD}"@localhost/freepdb1
+    echo exit
+} | "${SQLCL}" "demouser/\"${APP_USER_PASSWORD}\"@localhost/freepdb1"
